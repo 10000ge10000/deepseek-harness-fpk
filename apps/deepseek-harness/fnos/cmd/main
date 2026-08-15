@@ -1,0 +1,148 @@
+#!/bin/bash
+
+APPNAME="deepseek-harness"
+
+# 自动推导应用与数据目录
+if [ -z "${TRIM_APPDEST:-}" ]; then
+    if [ -e "/var/apps/${APPNAME}/target" ]; then
+        TRIM_APPDEST=$(readlink -f "/var/apps/${APPNAME}/target" 2>/dev/null || echo "/var/apps/${APPNAME}/target")
+    else
+        TRIM_APPDEST="/vol1/@appcenter/${APPNAME}"
+    fi
+fi
+
+if [ -z "${TRIM_PKGVAR:-}" ]; then
+    if [ -e "/var/apps/${APPNAME}/var" ]; then
+        TRIM_PKGVAR=$(readlink -f "/var/apps/${APPNAME}/var" 2>/dev/null || echo "/var/apps/${APPNAME}/var")
+    else
+        TRIM_PKGVAR="/vol1/@appdata/${APPNAME}"
+    fi
+fi
+
+mkdir -p "${TRIM_PKGVAR}" 2>/dev/null || true
+
+LOG_FILE="${TRIM_PKGVAR}/${APPNAME}.log"
+PID_FILE="${TRIM_PKGVAR}/${APPNAME}.pid"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
+start_process() {
+    log_msg "Starting ${APPNAME}..."
+    
+    # 检查是否已在运行
+    if [ -f "${PID_FILE}" ]; then
+        local old_pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+        if [ -n "${old_pid}" ] && kill -0 "${old_pid}" 2>/dev/null; then
+            log_msg "${APPNAME} already running with PID ${old_pid}"
+            return 0
+        fi
+    fi
+
+    export PATH="${TRIM_APPDEST}/bin:$PATH"
+    export HOME="${TRIM_APPDEST}"
+    export TRIM_APPDEST="${TRIM_APPDEST}"
+    export TRIM_PKGVAR="${TRIM_PKGVAR}"
+
+    cd "${TRIM_PKGVAR}"
+
+    # 启动统一调度器 runner.js
+    "${TRIM_APPDEST}/bin/node" "${TRIM_APPDEST}/bin/runner.js" >> "${LOG_FILE}" 2>&1 &
+    local new_pid=$!
+    printf "%s" "${new_pid}" > "${PID_FILE}"
+    log_msg "Started with PID: ${new_pid}"
+
+    # 验证是否成功启动
+    sleep 1
+    if kill -0 "${new_pid}" 2>/dev/null; then
+        return 0
+    else
+        log_msg "Failed to start or process exited immediately"
+        rm -f "${PID_FILE}"
+        return 1
+    fi
+}
+
+stop_process() {
+    log_msg "Stopping ${APPNAME}..."
+
+    if [ -f "${PID_FILE}" ]; then
+        local pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+        if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+            log_msg "Sending TERM to PID ${pid}"
+            kill -TERM "${pid}" 2>/dev/null || true
+
+            local count=0
+            while kill -0 "${pid}" 2>/dev/null && [ $count -lt 5 ]; do
+                sleep 1
+                count=$((count + 1))
+            done
+
+            if kill -0 "${pid}" 2>/dev/null; then
+                log_msg "Force killing PID ${pid}"
+                kill -KILL "${pid}" 2>/dev/null || true
+            fi
+        fi
+    fi
+
+    # 清理所有残留进程
+    pkill -9 -f "${TRIM_APPDEST}/bin/runner.js" 2>/dev/null || true
+    pkill -9 -f "@deepseek-ai/dsh" 2>/dev/null || true
+    rm -f "${PID_FILE}" 2>/dev/null || true
+    log_msg "Stopped successfully"
+    return 0
+}
+
+status_process() {
+    if [ -f "${PID_FILE}" ]; then
+        local pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+        if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+            return 0
+        else
+            rm -f "${PID_FILE}"
+        fi
+    fi
+    return 3
+}
+
+case "$1" in
+start)
+    if start_process; then
+        echo "✓ 启动成功"
+        exit 0
+    else
+        echo "✗ 启动失败"
+        exit 1
+    fi
+    ;;
+stop)
+    stop_process
+    echo "✓ 已停止"
+    exit 0
+    ;;
+status)
+    if status_process; then
+        echo "✓ 服务运行中"
+        exit 0
+    else
+        echo "✗ 服务未运行"
+        exit 3
+    fi
+    ;;
+restart)
+    stop_process
+    sleep 1
+    if start_process; then
+        echo "✓ 重启成功"
+        exit 0
+    else
+        echo "✗ 重启失败"
+        exit 1
+    fi
+    ;;
+*)
+    echo "Usage: $0 {start|stop|status|restart}"
+    exit 1
+    ;;
+esac

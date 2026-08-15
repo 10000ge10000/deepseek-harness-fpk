@@ -1,0 +1,27 @@
+[
+    {
+        "stepTitle": "卸载确认",
+        "items": [
+            {
+                "type": "tips",
+                "helpText": "您即将卸载 DeepSeek Harness。请选择是否保留您的会话记录和模型配置数据："
+            },
+            {
+                "type": "radio",
+                "field": "wizard_delete_data",
+                "label": "数据保留选项",
+                "initValue": "false",
+                "options": [
+                    {
+                        "label": "保留数据（推荐）- 再次安装时可直接恢复所有会话和配置",
+                        "value": "false"
+                    },
+                    {
+                        "label": "彻底删除所有数据（不可恢复）",
+                        "value": "true"
+                    }
+                ]
+            }
+        ]
+    }
+]

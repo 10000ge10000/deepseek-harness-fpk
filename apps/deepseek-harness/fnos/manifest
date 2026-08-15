@@ -1,0 +1,17 @@
+appname         = deepseek-harness
+version         = 0.1.0-rc.6.1
+display_name    = DeepSeek Harness
+platform        = x86
+maintainer      = DeepSeek AI
+maintainer_url  = https://github.com/deepseek-ai/deepseek-harness
+distributor     = 一万AI分享
+distributor_url = https://space.bilibili.com/59438380
+desktop_uidir   = ui
+desktop_applaunchname = deepseek-harness.Application
+service_port    = 3080
+checkport       = false
+ctl_stop        = true
+desc            = DeepSeek AI 官方开源 Agent Harness（智能体框架），由【一万AI分享】编译打包为飞牛 fnOS 原生应用。支持多模型、多通道及 Web UI 管理。B站主页：https://space.bilibili.com/59438380
+source          = thirdparty
+wizard_dir      = wizard
+checksum        =

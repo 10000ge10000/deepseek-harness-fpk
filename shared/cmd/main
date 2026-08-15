@@ -1,0 +1,69 @@
+#!/bin/bash
+
+COMMON=$(dirname $0)"/common"
+if [ -r "${COMMON}" ]; then
+    . "${COMMON}"
+fi
+
+SVC_SETUP=$(dirname $0)"/service-setup"
+if [ -r "${SVC_SETUP}" ]; then
+    . "${SVC_SETUP}"
+fi
+
+case $1 in
+    start)
+        if daemon_status; then
+            echo "${DNAME} is already running" >> ${LOG_FILE}
+            exit 0
+        else
+            echo "Starting ${DNAME} ..." >> ${LOG_FILE}
+            start_daemon
+            exit $?
+        fi
+        ;;
+    stop)
+        if daemon_status; then
+            echo "Stopping ${DNAME} ..." >> ${LOG_FILE}
+        else
+            echo "${DNAME} is not running (PID), attempting cleanup ..." >> ${LOG_FILE}
+        fi
+        stop_daemon
+        exit 0
+        ;;
+    status)
+        if daemon_status; then
+            echo "${DNAME} is running"
+            exit 0
+        else
+            echo "${DNAME} is not running"
+            exit 3
+        fi
+        ;;
+    log)
+        LINES="${2:-100}"
+        if [ -n "$DOCKER_NAME" ]; then
+            COMPOSE_PATH="${TRIM_APPDEST}/docker/docker-compose.yaml"
+            if [ -f "$COMPOSE_PATH" ]; then
+                CONTAINERS=$(grep "container_name" "$COMPOSE_PATH" | awk -F ':' '{print $2}' | xargs)
+            else
+                CONTAINERS="$DOCKER_NAME"
+            fi
+            for cname in $CONTAINERS; do
+                echo "=== [$cname] ==="
+                docker logs --tail "$LINES" "$cname" 2>&1
+                echo ""
+            done
+        else
+            if [ -f "${LOG_FILE}" ]; then
+                tail -n "$LINES" "${LOG_FILE}"
+            else
+                echo "日志文件不存在: ${LOG_FILE}"
+                exit 1
+            fi
+        fi
+        exit 0
+        ;;
+    *)
+        exit 1
+        ;;
+esac

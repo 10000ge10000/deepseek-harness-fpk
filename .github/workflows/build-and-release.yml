@@ -1,0 +1,78 @@
+name: Build and Release DeepSeek Harness FPK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '发布版本号 (留空则默认读取 manifest)'
+        required: false
+        default: ''
+      release_title:
+        description: 'Release 标题'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build fnOS FPK Package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build app.tgz
+        run: |
+          chmod +x scripts/apps/deepseek-harness/build.sh
+          bash scripts/apps/deepseek-harness/build.sh
+
+      - name: Build .fpk Package
+        id: build_fpk
+        run: |
+          chmod +x build-fpk.sh
+          VERSION_INPUT="${{ github.event.inputs.version }}"
+          if [ -n "$VERSION_INPUT" ]; then
+            bash build-fpk.sh "$VERSION_INPUT" x86
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            TAG_VER="${GITHUB_REF#refs/tags/v}"
+            bash build-fpk.sh "$TAG_VER" x86
+          else
+            bash build-fpk.sh
+          fi
+
+          FPK_FILE=$(ls *.fpk | head -n 1)
+          echo "fpk_file=${FPK_FILE}" >> $GITHUB_OUTPUT
+          echo "构建产物: ${FPK_FILE}"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepseek-harness-fpk
+          path: ${{ steps.build_fpk.outputs.fpk_file }}
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.build_fpk.outputs.fpk_file }}
+          tag_name: ${{ github.ref_name || format('v{0}', github.event.inputs.version || '0.1.0-rc.6.1') }}
+          name: ${{ github.event.inputs.release_title || format('DeepSeek Harness fnOS {0}', github.ref_name) }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

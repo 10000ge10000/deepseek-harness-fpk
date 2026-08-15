@@ -1,0 +1,54 @@
+# DeepSeek Harness for fnOS (飞牛私有云 NAS)
+
+[![Build and Release DeepSeek Harness FPK](https://github.com/10000ge10000/deepseek-harness-fpk/actions/workflows/build-and-release.yml/badge.svg)](https://github.com/10000ge10000/deepseek-harness-fpk/actions/workflows/build-and-release.yml)
+
+本项目为 **DeepSeek Harness** 在 **飞牛私有云 NAS (fnOS)** 上的专属定制离线安装包（`.fpk`）及自动构建流水线。
+
+---
+
+## 🌟 定制特性
+
+1. **一键开箱即用（一万AI分享专属定制）**：
+   - 内置公益站点 API 端点：`https://api.910501.xyz/v1`
+   - 专属单模型锁定：⭐ **`一万AI分享DSH专用模型`**（默认内置）
+   - 安装向导仅需输入 API Key（可跳过），完全无需复杂参数配置。
+2. **极简 2 步安装向导**：
+   - 包含一键直达公益站及 B 站视频教程超链接。
+   - 移除多余的端口交互（内置安全固定端口）。
+3. **工作区与飞牛桌面【文件管理】100% 同步互通**：
+   - 应用数据目录直接与飞牛桌面【文件管理】$\rightarrow$【应用文件】$\rightarrow$【`DeepSeekHarness`】桥接。
+   - 在应用内创建的工程、项目代码、文件实时可见，支持在线管理与下载。
+4. **局域网环境无缝支持**：
+   - 内置安全上下文 Polyfill 与反向代理支持，完美适配 HTTP / 局域网非安全上下文环境。
+
+---
+
+## 📥 安装方法
+
+1. 前往本项目的 [Releases 页面](https://github.com/10000ge10000/deepseek-harness-fpk/releases) 下载最新的 `deepseek-harness_<version>_x86.fpk` 安装包。
+2. 登录飞牛 NAS 桌面，打开 **【应用中心】**。
+3. 点击右上角 **【手动安装】**，选择下载的 `.fpk` 文件。
+4. 按照向导提示填入您的 API 密钥（若无密钥可直接点击下一步），完成安装。
+5. 在飞牛桌面点击 **DeepSeek Harness** 图标即可启动使用！
+
+---
+
+## 🚀 开发者与自动编译发布 (GitHub Actions)
+
+本项目已配置完善的 GitHub Actions 自动构建与发布流水线：
+
+- **发布新版本**：
+  只需推送一个带 `v` 前缀的 Git Tag（例如 `v0.1.0-rc.7`）：
+  ```bash
+  git tag v0.1.0-rc.7
+  git push origin v0.1.0-rc.7
+  ```
+  GitHub Actions 将自动拉取最新源码、应用定制补丁、打包 `.fpk` 并自动创建对应的 GitHub Release 供用户下载！
+- **手动触发构建**：
+  在 GitHub 仓库的 **Actions** $\rightarrow$ **Build and Release DeepSeek Harness FPK** 页面，点击 **Run workflow** 即可随时手动打包。
+
+---
+
+## 📄 开源许可
+
+本项目遵循 MIT 开源许可证。

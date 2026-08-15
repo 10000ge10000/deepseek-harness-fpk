@@ -1,0 +1,13 @@
+# 构建产物与临时包
+app.tgz
+*.fpk
+node_modules/
+package-lock.json
+pnpm-lock.yaml
+
+# 临时调试与日志
+*.tmp
+*.log
+*.pid
+.dsh/
+scratch/
