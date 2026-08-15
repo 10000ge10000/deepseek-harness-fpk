@@ -11,10 +11,11 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 VERSION="${VERSION:-0.1.0-rc.6}"
 NODE_VERSION="${NODE_VERSION:-24.4.0}"
 TARBALL_ARCH="${TARBALL_ARCH:-amd64}"
+OUTPUT_TGZ="${OUTPUT_TGZ:-${REPO_ROOT}/app_${TARBALL_ARCH}.tgz}"
 
 case "$TARBALL_ARCH" in
-  amd64) NODE_ARCH="x64" ;;
-  arm64) NODE_ARCH="arm64" ;;
+  amd64|x86|x64) NODE_ARCH="x64" ;;
+  arm64|aarch64|arm) NODE_ARCH="arm64" ;;
   *) echo "Unsupported TARBALL_ARCH=${TARBALL_ARCH}" >&2; exit 1 ;;
 esac
 
@@ -183,6 +184,7 @@ for root, dirs, files in os.walk('${WORK_DIR}/app_root/node_modules/@deepseek-ai
 " 2>/dev/null || true
 
 # 5. Build app.tgz
-tar -czf "${REPO_ROOT}/app.tgz" -C "${WORK_DIR}/app_root" .
-echo "==> Built app.tgz for DeepSeek Harness ${VERSION}"
-du -h "${REPO_ROOT}/app.tgz"
+tar -czf "${OUTPUT_TGZ}" -C "${WORK_DIR}/app_root" .
+cp "${OUTPUT_TGZ}" "${REPO_ROOT}/app.tgz" 2>/dev/null || true
+echo "==> Built ${OUTPUT_TGZ} for DeepSeek Harness ${VERSION}"
+du -h "${OUTPUT_TGZ}"

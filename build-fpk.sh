@@ -14,12 +14,31 @@ SHARED_DIR="$REPO_ROOT/shared"
 VERSION="${1:-}"
 PLATFORM="${2:-x86}"
 
+case "$PLATFORM" in
+    x86|x86_64|amd64)
+        NORM_PLATFORM="x86"
+        TAR_FILE="${REPO_ROOT}/app_amd64.tgz"
+        ;;
+    arm|arm64|aarch64)
+        NORM_PLATFORM="arm"
+        TAR_FILE="${REPO_ROOT}/app_arm64.tgz"
+        ;;
+    *)
+        NORM_PLATFORM="$PLATFORM"
+        TAR_FILE="${REPO_ROOT}/app_${PLATFORM}.tgz"
+        ;;
+esac
+
+if [ ! -f "$TAR_FILE" ] && [ -f "${REPO_ROOT}/app.tgz" ]; then
+    TAR_FILE="${REPO_ROOT}/app.tgz"
+fi
+
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
 [ -d "$APP_DIR/fnos" ] || error "App directory not found: $APP_DIR/fnos"
-[ -f "${REPO_ROOT}/app.tgz" ] || error "app.tgz not found — run build.sh first"
+[ -f "$TAR_FILE" ] || error "Target archive not found: $TAR_FILE — run build.sh first"
 
 # Validate required files
 for f in manifest cmd config ICON.PNG ICON_256.PNG; do
@@ -31,16 +50,16 @@ done
 APPNAME=$(grep "^appname" "$APP_DIR/fnos/manifest" | awk -F'=' '{print $2}' | tr -d ' ')
 [ -n "$APPNAME" ] || error "Cannot read appname from manifest"
 
-info "Building fpk for: $APPNAME (platform: $PLATFORM)"
+info "Building fpk for: $APPNAME (platform: $NORM_PLATFORM)"
 
-CHECKSUM=$(md5sum "${REPO_ROOT}/app.tgz" | cut -d' ' -f1)
+CHECKSUM=$(md5sum "$TAR_FILE" | cut -d' ' -f1)
 
 WORK_DIR=$(mktemp -d)
 PKG_DIR="$WORK_DIR/package"
 mkdir -p "$PKG_DIR/cmd"
 
 # 1. app.tgz
-cp "${REPO_ROOT}/app.tgz" "$PKG_DIR/app.tgz"
+cp "$TAR_FILE" "$PKG_DIR/app.tgz"
 
 # 2. shared cmd framework
 for f in "$SHARED_DIR"/cmd/*; do
@@ -92,9 +111,9 @@ if [ -n "$VERSION" ]; then
     sed -i.tmp "s/^version.*/version         = ${VERSION}/" "$PKG_DIR/manifest"
 fi
 if grep -q "^platform" "$PKG_DIR/manifest"; then
-    sed -i.tmp "s/^platform.*/platform        = ${PLATFORM}/" "$PKG_DIR/manifest"
+    sed -i.tmp "s/^platform.*/platform        = ${NORM_PLATFORM}/" "$PKG_DIR/manifest"
 else
-    echo "platform        = ${PLATFORM}" >> "$PKG_DIR/manifest"
+    echo "platform        = ${NORM_PLATFORM}" >> "$PKG_DIR/manifest"
 fi
 sed -i.tmp "s/^checksum.*/checksum        = ${CHECKSUM}/" "$PKG_DIR/manifest"
 rm -f "$PKG_DIR/manifest.tmp"

@@ -25,7 +25,9 @@
 
 ## 📥 安装方法
 
-1. 前往本项目的 [Releases 页面](https://github.com/10000ge10000/deepseek-harness-fpk/releases) 下载最新的 `deepseek-harness_<version>_x86.fpk` 安装包。
+1. 前往本项目的 [Releases 页面](https://github.com/10000ge10000/deepseek-harness-fpk/releases) 下载适合您 NAS 硬件架构的 `.fpk` 安装包：
+   - **x86_64 设备**（Intel / AMD CPU）：下载 `*_x86.fpk`
+   - **ARM 设备**（Rockchip / Allwinner / 树莓派 / ARM64 CPU）：下载 `*_arm.fpk`
 2. 登录飞牛 NAS 桌面，打开 **【应用中心】**。
 3. 点击右上角 **【手动安装】**，选择下载的 `.fpk` 文件。
 4. 按照向导提示填入您的 API 密钥（若无密钥可直接点击下一步），完成安装。
