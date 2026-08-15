@@ -55,6 +55,8 @@ if [ -d "${REPO_ROOT}/apps/deepseek-harness/fnos/bin" ]; then
     echo "==> Bundling start & proxy scripts..."
     cp -r "${REPO_ROOT}/apps/deepseek-harness/fnos/bin/." "${WORK_DIR}/app_root/bin/"
     chmod +x "${WORK_DIR}/app_root/bin/"* 2>/dev/null || true
+fi
+
 # 4. 前端非安全上下文 UUID、403 放行、一万AI分享单模型与飞牛工作区补丁
 python3 -c "
 import os
