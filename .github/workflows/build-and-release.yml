@@ -7,6 +7,9 @@ on:
       - master
     tags:
       - 'v*'
+  schedule:
+    # 每天 UTC 00:00 和 12:00 (北京时间 08:00 和 20:00) 自动巡检官方最新版本
+    - cron: '0 0,12 * * *'
   workflow_dispatch:
     inputs:
       version:
@@ -20,10 +23,12 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   build:
-    name: Build fnOS FPK Package
+    name: Build fnOS FPK & Sync AppStore
     runs-on: ubuntu-latest
 
     steps:
@@ -55,8 +60,19 @@ jobs:
           fi
 
           FPK_FILE=$(ls *.fpk | head -n 1)
+          APP_VER=$(grep "^version" apps/deepseek-harness/fnos/manifest | awk -F'=' '{print $2}' | tr -d ' ')
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            RELEASE_TAG="${GITHUB_REF#refs/tags/}"
+          elif [ -n "$VERSION_INPUT" ]; then
+            RELEASE_TAG="v${VERSION_INPUT}"
+          else
+            RELEASE_TAG="v${APP_VER}"
+          fi
+
           echo "fpk_file=${FPK_FILE}" >> $GITHUB_OUTPUT
-          echo "构建产物: ${FPK_FILE}"
+          echo "version=${APP_VER}" >> $GITHUB_OUTPUT
+          echo "tag_name=${RELEASE_TAG}" >> $GITHUB_OUTPUT
+          echo "构建产物: ${FPK_FILE}, 版本: ${APP_VER}, Release Tag: ${RELEASE_TAG}"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -65,14 +81,102 @@ jobs:
           path: ${{ steps.build_fpk.outputs.fpk_file }}
 
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        id: create_release
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.build_fpk.outputs.fpk_file }}
-          tag_name: ${{ github.ref_name || format('v{0}', github.event.inputs.version || '0.1.0-rc.6.1') }}
-          name: ${{ github.event.inputs.release_title || format('DeepSeek Harness fnOS {0}', github.ref_name) }}
+          tag_name: ${{ steps.build_fpk.outputs.tag_name }}
+          name: ${{ github.event.inputs.release_title || format('DeepSeek Harness fnOS {0}', steps.build_fpk.outputs.tag_name) }}
           draft: false
           prerelease: false
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate fnOS AppStore Index & Webpage
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p public
+          python3 -c "
+          import json, os
+
+          ver = '${{ steps.build_fpk.outputs.version }}'
+          fpk_name = '${{ steps.build_fpk.outputs.fpk_file }}'
+          tag_name = '${{ steps.build_fpk.outputs.tag_name }}'
+
+          app_info = {
+              'name': 'DeepSeekHarness',
+              'title': 'DeepSeek Harness (一万AI分享专属定制版)',
+              'version': ver,
+              'platform': 'x86',
+              'author': '一万AI分享',
+              'description': 'DeepSeek 官方 AI 开发助手与桌面工作台，内置一万AI公益API端点与专属单模型，工作区与飞牛文件管理双向打通。',
+              'icon': 'https://raw.githubusercontent.com/10000ge10000/deepseek-harness-fpk/main/apps/deepseek-harness/fnos/ICON_256.PNG',
+              'download_url': f'https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/{tag_name}/{fpk_name}',
+              'changelog': '一键开箱即用，支持局域网非安全上下文 Polyfill，飞牛文件管理双向打通。'
+          }
+
+          store_data = {
+              'name': '一万AI分享应用源',
+              'description': '一万AI分享 飞牛私有云 NAS 第三方应用源',
+              'url': 'https://10000ge10000.github.io/deepseek-harness-fpk/',
+              'apps': [app_info]
+          }
+
+          with open('public/appstore.json', 'w', encoding='utf-8') as f:
+              json.dump(store_data, f, ensure_ascii=False, indent=2)
+
+          with open('public/manifests.json', 'w', encoding='utf-8') as f:
+              json.dump([app_info], f, ensure_ascii=False, indent=2)
+
+          with open('public/index.html', 'w', encoding='utf-8') as f:
+              f.write(f'''<!DOCTYPE html>
+          <html lang=\"zh-CN\">
+          <head>
+              <meta charset=\"utf-8\">
+              <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+              <title>一万AI分享 · 飞牛 NAS 第三方应用源</title>
+              <style>
+                  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #24292e; line-height: 1.6; background-color: #f6f8fa; }}
+                  .container {{ background: #fff; border: 1px solid #e1e4e8; border-radius: 12px; padding: 32px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }}
+                  h1 {{ color: #0366d6; margin-top: 0; }}
+                  .card {{ background: #fafbfc; border: 1px solid #e1e4e8; border-radius: 8px; padding: 20px; margin: 20px 0; }}
+                  .badge {{ background: #28a745; color: white; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; vertical-align: middle; }}
+                  code {{ background: #eef1f4; padding: 4px 8px; border-radius: 6px; font-family: SFMono-Regular, Consolas, monospace; font-size: 14px; word-break: break-all; color: #d73a49; }}
+                  a.btn {{ display: inline-block; background: #0366d6; color: white; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; margin-top: 10px; }}
+                  a.btn:hover {{ background: #0256b9; }}
+              </style>
+          </head>
+          <body>
+              <div class=\"container\">
+                  <h1>🚀 一万AI分享 · 飞牛 NAS 第三方应用源</h1>
+                  <p>欢迎使用一万AI分享专属维护的飞牛私有云应用源。在飞牛桌面应用中心添加后，即可享受一键在线安装与自动更新！</p>
+                  
+                  <div class=\"card\">
+                      <h3>📦 飞牛应用中心源订阅地址</h3>
+                      <p>打开飞牛桌面 <strong>【应用中心】</strong> &rarr; 点击右上角 <strong>【设置】</strong> &rarr; <strong>【第三方源】</strong> &rarr; 粘贴以下链接：</p>
+                      <p><code>https://10000ge10000.github.io/deepseek-harness-fpk/appstore.json</code></p>
+                  </div>
+                  
+                  <div class=\"card\">
+                      <h3>🤖 DeepSeek Harness <span class=\"badge\">{ver}</span></h3>
+                      <p>DeepSeek 官方 AI 开发助手与桌面工作台（一万AI分享定制版）。</p>
+                      <ul>
+                          <li><strong>内置公益端点</strong>：<code>https://api.910501.xyz/v1</code></li>
+                          <li><strong>专属模型</strong>：一万AI分享DSH专用模型</li>
+                          <li><strong>文件打通</strong>：实时互通至飞牛桌面【文件管理】&rarr;【应用文件】</li>
+                      </ul>
+                      <a class=\"btn\" href=\"{app_info['download_url']}\">📥 直接下载最新 .fpk 安装包</a>
+                  </div>
+              </div>
+          </body>
+          </html>''')
+          "
+
+      - name: Deploy to GitHub Pages
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
