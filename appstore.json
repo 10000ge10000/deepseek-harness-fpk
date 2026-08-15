@@ -1,17 +1,28 @@
 {
   "name": "一万AI分享应用源",
-  "description": "一万AI分享 飞牛私有云 NAS 第三方应用源",
+  "description": "一万AI分享 飞牛私有云 NAS 第三方应用源 (支持 x86 与 ARM64 双架构)",
   "url": "https://10000ge10000.github.io/deepseek-harness-fpk/",
   "apps": [
     {
       "name": "DeepSeekHarness",
-      "title": "DeepSeek Harness (一万AI分享专属定制版)",
+      "title": "DeepSeek Harness (一万AI分享定制版 - x86)",
       "version": "0.1.0-rc.6.1",
       "platform": "x86",
       "author": "一万AI分享",
-      "description": "DeepSeek 官方 AI 开发助手与桌面工作台，内置一万AI公益API端点与专属单模型，工作区与飞牛文件管理双向打通。",
+      "description": "DeepSeek 官方 AI 开发助手与桌面工作台 (x86_64 架构)。内置一万AI公益API与专属模型，文件管理实时互通。",
       "icon": "https://raw.githubusercontent.com/10000ge10000/deepseek-harness-fpk/main/apps/deepseek-harness/fnos/ICON_256.PNG",
       "download_url": "https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/v0.1.0-rc.6.1/deepseek-harness_0.1.0-rc.6.1_x86.fpk",
+      "changelog": "一键开箱即用，支持局域网非安全上下文 Polyfill，飞牛文件管理双向打通。"
+    },
+    {
+      "name": "DeepSeekHarness",
+      "title": "DeepSeek Harness (一万AI分享定制版 - ARM)",
+      "version": "0.1.0-rc.6.1",
+      "platform": "arm",
+      "author": "一万AI分享",
+      "description": "DeepSeek 官方 AI 开发助手与桌面工作台 (ARM64 / aarch64 架构)。内置一万AI公益API与专属模型，文件管理实时互通。",
+      "icon": "https://raw.githubusercontent.com/10000ge10000/deepseek-harness-fpk/main/apps/deepseek-harness/fnos/ICON_256.PNG",
+      "download_url": "https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/v0.1.0-rc.6.1/deepseek-harness_0.1.0-rc.6.1_arm.fpk",
       "changelog": "一键开箱即用，支持局域网非安全上下文 Polyfill，飞牛文件管理双向打通。"
     }
   ]
