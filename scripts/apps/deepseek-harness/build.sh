@@ -32,13 +32,16 @@ echo "==> Downloading Node.js ${NODE_VERSION}..."
 curl -fL --retry 3 -o "${WORK_DIR}/${NODE_ARCHIVE}" "$NODE_URL"
 mkdir -p "${WORK_DIR}/node"
 tar -xJf "${WORK_DIR}/${NODE_ARCHIVE}" -C "${WORK_DIR}/node" --strip-components=1
+# npm 及其生命周期脚本会通过 PATH 再次查找 node；必须固定到刚下载的
+# 运行时，不能依赖 GitHub Actions 或开发机恰好预装的其他版本。
+export PATH="${WORK_DIR}/node/bin:${PATH}"
 
 # 2. Install dsh (npm package, includes all deps)
 mkdir -p "${WORK_DIR}/dsh-web"
 cd "${WORK_DIR}/dsh-web"
 "${WORK_DIR}/node/bin/npm" init -y >/dev/null 2>&1
 echo "==> Installing @deepseek-ai/dsh@${VERSION}..."
-"${WORK_DIR}/node/bin/npm" install "@deepseek-ai/dsh@${VERSION}" --omit=dev --no-audit --no-fund
+"${WORK_DIR}/node/bin/node" "${WORK_DIR}/node/lib/node_modules/npm/bin/npm-cli.js" install "@deepseek-ai/dsh@${VERSION}" --omit=dev --no-audit --no-fund
 
 # 3. Assemble app_root (app.tgz content)
 mkdir -p "${WORK_DIR}/app_root/bin"
@@ -58,10 +61,25 @@ if [ -d "${REPO_ROOT}/apps/deepseek-harness/fnos/bin" ]; then
     chmod +x "${WORK_DIR}/app_root/bin/"* 2>/dev/null || true
 fi
 
-# 4. 执行独立补丁脚本（前端非安全上下文 UUID、403 放行、一万AI分享单模型与飞牛工作区补丁）
+# 4. 执行独立补丁脚本（403 放行、一万AI分享单模型与飞牛工作区补丁）
 python3 "${SCRIPT_DIR}/patch.py" "${WORK_DIR}/app_root"
 
-# 5. Build app.tgz
+# 5. 在打包前校验所有 DeepSeek 模块的 JavaScript 语法，避免把无法启动的包交给 fnOS。
+echo "==> Checking patched DeepSeek JavaScript syntax..."
+SYNTAX_ERRORS=0
+while IFS= read -r JS_FILE; do
+    if ! "${WORK_DIR}/node/bin/node" --check "${JS_FILE}" >/dev/null 2>&1; then
+        echo "Syntax check failed: ${JS_FILE}" >&2
+        SYNTAX_ERRORS=$((SYNTAX_ERRORS + 1))
+    fi
+done < <(find "${WORK_DIR}/app_root/node_modules/@deepseek-ai" -type f \( -name '*.js' -o -name '*.mjs' \) -print)
+
+if [ "${SYNTAX_ERRORS}" -ne 0 ]; then
+    echo "Refusing to package: ${SYNTAX_ERRORS} DeepSeek JavaScript file(s) failed syntax validation." >&2
+    exit 1
+fi
+
+# 6. Build app.tgz
 tar -czf "${OUTPUT_TGZ}" -C "${WORK_DIR}/app_root" .
 cp "${OUTPUT_TGZ}" "${REPO_ROOT}/app.tgz" 2>/dev/null || true
 echo "==> Built ${OUTPUT_TGZ} for DeepSeek Harness ${VERSION}"

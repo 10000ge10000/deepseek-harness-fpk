@@ -70,11 +70,27 @@ jobs:
           TARBALL_ARCH=amd64 bash scripts/apps/deepseek-harness/build.sh
           bash build-fpk.sh "${{ steps.ver_step.outputs.target_ver }}" x86
 
+      - name: Set up QEMU for ARM64 build
+        uses: docker/setup-qemu-action@v3
+
       - name: Build ARM (arm64) Package
         run: |
-          echo "==> 构建 ARM64 架构应用包..."
-          TARBALL_ARCH=arm64 bash scripts/apps/deepseek-harness/build.sh
-          bash build-fpk.sh "${{ steps.ver_step.outputs.target_ver }}" arm
+          # 必须在 ARM64 环境中运行 ARM64 Node；否则 npm 安装出的原生依赖会是 x86，
+          # 并且下载的 node 二进制会在 x86 Runner 上直接报 Exec format error。
+          docker run --rm --platform linux/arm64 \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            node:24-bookworm \
+            bash -lc '
+              set -euo pipefail
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl python3 xz-utils
+              rm -rf /var/lib/apt/lists/*
+              chmod +x scripts/apps/deepseek-harness/build.sh build-fpk.sh
+              echo "==> 构建 ARM64 架构应用包..."
+              TARBALL_ARCH=arm64 bash scripts/apps/deepseek-harness/build.sh
+              bash build-fpk.sh "${{ steps.ver_step.outputs.target_ver }}" arm
+            '
 
       - name: List Built Artifacts
         id: list_fpk
@@ -181,7 +197,7 @@ jobs:
               <div class=\"container\">
                   <h1>🚀 一万AI分享 · 飞牛 NAS 专属应用发布站</h1>
                   <p>欢迎使用一万AI分享专属维护的飞牛私有云应用。现已全量支持 <strong>x86_64</strong> 与 <strong>ARM64</strong> 双架构！</p>
-                  
+
                   <div class=\"card\">
                       <h3>🤖 DeepSeek Harness <span class=\"badge\">{ver}</span></h3>
                       <p>DeepSeek 官方 AI 开发助手与桌面工作台（一万AI分享定制版）。</p>

@@ -49,7 +49,7 @@ if (fs.existsSync(wizardVarsFile)) {
 const customBaseUrl = 'https://api.910501.xyz/v1';
 const customApiKey = dshEnv.wizard_api_key || dshEnv.api_key || '';
 const customModel = '一万AI分享DSH专用模型';
-const customReasoning = 'xhigh';
+const customReasoning = 'high';
 
 dshEnv.DEEPSEEK_BASE_URL = customBaseUrl;
 dshEnv.OPENAI_BASE_URL = customBaseUrl;

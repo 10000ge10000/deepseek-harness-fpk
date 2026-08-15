@@ -35,22 +35,6 @@
 
 ---
 
-## 🚀 开发者与自动编译发布 (GitHub Actions)
-
-本项目已配置完善的 GitHub Actions 自动构建与发布流水线：
-
-- **发布新版本**：
-  只需推送一个带 `v` 前缀的 Git Tag（例如 `v0.1.0-rc.7`）：
-  ```bash
-  git tag v0.1.0-rc.7
-  git push origin v0.1.0-rc.7
-  ```
-  GitHub Actions 将自动拉取最新源码、应用定制补丁、打包 `.fpk` 并自动创建对应的 GitHub Release 供用户下载！
-- **手动触发构建**：
-  在 GitHub 仓库的 **Actions** $\rightarrow$ **Build and Release DeepSeek Harness FPK** 页面，点击 **Run workflow** 即可随时手动打包。
-
----
-
 ## 📄 开源许可
 
 本项目遵循 MIT 开源许可证。
