@@ -27,8 +27,47 @@ permissions:
   id-token: write
 
 jobs:
+  build_arm:
+    name: Build ARM64 FPK Package
+    # DSH 依赖 sharp、node-pty、koffi 等原生模块；在 x86 QEMU 中执行 npm install
+    # 会长时间卡住。使用 GitHub 托管的原生 ARM64 Runner 生成正确的二进制依赖。
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Determine Version
+        id: ver_step
+        run: |
+          VERSION_INPUT="${{ github.event.inputs.version }}"
+          APP_VER=$(grep "^version" apps/deepseek-harness/fnos/manifest | awk -F'=' '{print $2}' | tr -d ' ')
+          if [ -n "$VERSION_INPUT" ]; then
+            TARGET_VER="$VERSION_INPUT"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            TARGET_VER="${GITHUB_REF#refs/tags/v}"
+          else
+            TARGET_VER="$APP_VER"
+          fi
+          echo "target_ver=${TARGET_VER}" >> $GITHUB_OUTPUT
+
+      - name: Build ARM (arm64) Package
+        run: |
+          chmod +x scripts/apps/deepseek-harness/build.sh build-fpk.sh
+          echo "==> 在原生 ARM64 Runner 构建应用包..."
+          TARBALL_ARCH=arm64 bash scripts/apps/deepseek-harness/build.sh
+          bash build-fpk.sh "${{ steps.ver_step.outputs.target_ver }}" arm
+
+      - name: Upload ARM Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepseek-harness-fpk-arm
+          path: "*_arm.fpk"
+          if-no-files-found: error
+
   build:
     name: Build Multi-Arch (x86 & ARM) FPK Packages
+    needs: build_arm
     runs-on: ubuntu-latest
 
     steps:
@@ -70,27 +109,11 @@ jobs:
           TARBALL_ARCH=amd64 bash scripts/apps/deepseek-harness/build.sh
           bash build-fpk.sh "${{ steps.ver_step.outputs.target_ver }}" x86
 
-      - name: Set up QEMU for ARM64 build
-        uses: docker/setup-qemu-action@v3
-
-      - name: Build ARM (arm64) Package
-        run: |
-          # 必须在 ARM64 环境中运行 ARM64 Node；否则 npm 安装出的原生依赖会是 x86，
-          # 并且下载的 node 二进制会在 x86 Runner 上直接报 Exec format error。
-          docker run --rm --platform linux/arm64 \
-            -v "$GITHUB_WORKSPACE:/workspace" \
-            -w /workspace \
-            node:24-bookworm \
-            bash -lc '
-              set -euo pipefail
-              apt-get update
-              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl python3 xz-utils
-              rm -rf /var/lib/apt/lists/*
-              chmod +x scripts/apps/deepseek-harness/build.sh build-fpk.sh
-              echo "==> 构建 ARM64 架构应用包..."
-              TARBALL_ARCH=arm64 bash scripts/apps/deepseek-harness/build.sh
-              bash build-fpk.sh "${{ steps.ver_step.outputs.target_ver }}" arm
-            '
+      - name: Download ARM Package
+        uses: actions/download-artifact@v4
+        with:
+          name: deepseek-harness-fpk-arm
+          path: .
 
       - name: List Built Artifacts
         id: list_fpk
