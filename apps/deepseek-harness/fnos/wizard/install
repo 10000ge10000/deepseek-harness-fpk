@@ -4,7 +4,7 @@
         "items": [
             {
                 "type": "tips",
-                "helpText": "<div style='font-size:15px;line-height:1.7;color:#1e293b;'><h3 style='margin:0 0 10px 0;color:#0284c7;font-size:18px;'>🎉 欢迎使用 DeepSeek Harness 飞牛专版</h3><p>本安装包由 <strong>一万AI分享</strong> 编译定制，已内置最佳推荐配置与专属模型通道。</p><ul style='padding-left:20px;margin:8px 0;'><li><strong>API 站点：</strong><a target='_blank' href='https://api.910501.xyz' style='color:#0284c7;text-decoration:underline;font-weight:bold;'>一万AI分享 API公益站</a></li><li><strong>默认模型：</strong><code>一万AI分享DSH专用模型</code></li><li><strong>默认推理强度：</strong><code>high</code>（高推理）</li></ul><div style='background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px;margin-top:12px;'><p style='margin:0;font-weight:600;color:#0369a1;'>📺 免费 API 密钥获取教程：</p><p style='margin:6px 0 0 0;'><a target='_blank' href='https://www.bilibili.com/video/BV1AUNH6mEuW/?share_source=copy_web&vd_source=260664925bd25341fbc5ae73f448a2b5' style='color:#0284c7;text-decoration:underline;font-weight:bold;'>【点击此处打开 B 站视频教程，免费获取专属 API 密钥】</a></p></div></div>"
+                "helpText": "<div style='font-size:15px;line-height:1.7;color:#1e293b;'><h3 style='margin:0 0 10px 0;color:#0284c7;font-size:18px;'>🎉 欢迎使用 DeepSeek Harness 飞牛专版</h3><p>本安装包由 <strong>一万AI分享</strong> 编译。可选择使用一万AI分享 API，也可在 Web 的【设置 → Models】中随时填写自己的 DeepSeek API、端点和模型目录。</p><ul style='padding-left:20px;margin:8px 0;'><li><strong>可选默认站点：</strong><a target='_blank' href='https://api.910501.xyz' style='color:#0284c7;text-decoration:underline;font-weight:bold;'>一万AI分享 API公益站</a></li><li><strong>模型管理：</strong>支持同一提供商的多个模型，配置可读写</li><li><strong>默认推理强度：</strong><code>high</code>（可在 Models 页面调整）</li></ul><div style='background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px;margin-top:12px;'><p style='margin:0;font-weight:600;color:#0369a1;'>📺 免费 API 密钥获取教程：</p><p style='margin:6px 0 0 0;'><a target='_blank' href='https://www.bilibili.com/video/BV1AUNH6mEuW/?share_source=copy_web&vd_source=260664925bd25341fbc5ae73f448a2b5' style='color:#0284c7;text-decoration:underline;font-weight:bold;'>【点击此处打开 B 站视频教程，免费获取专属 API 密钥】</a></p></div></div>"
             }
         ]
     },
@@ -13,7 +13,7 @@
         "items": [
             {
                 "type": "tips",
-                "helpText": "<div style='font-size:14px;line-height:1.7;color:#334155;margin-bottom:12px;'><p style='margin:0 0 8px 0;'>请在下方填入您在 <a target='_blank' href='https://api.910501.xyz' style='color:#0284c7;text-decoration:underline;font-weight:bold;'>一万AI分享 API公益站</a> 获取的 API 密钥。</p><div style='background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 12px;color:#92400e;font-size:13px;'>💡 <strong>温馨提示：</strong>如果有密钥请直接填入；<strong>如果没有、暂不使用、或打算使用其他服务商密钥，请直接点击【下一步】即可</strong>，稍后可在 Web 界面设置中随时修改配置。</div></div>"
+                "helpText": "<div style='font-size:14px;line-height:1.7;color:#334155;margin-bottom:12px;'><p style='margin:0 0 8px 0;'>可在下方填入您在 <a target='_blank' href='https://api.910501.xyz' style='color:#0284c7;text-decoration:underline;font-weight:bold;'>一万AI分享 API公益站</a> 获取的 API 密钥。</p><div style='background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 12px;color:#92400e;font-size:13px;'>💡 <strong>温馨提示：</strong>该 Key 只会在首次启动时写入 DSH 的可编辑凭据存储；之后可在 Web 的【设置 → Models】中直接更换为自己的 DeepSeek Key、端点或模型，不会被锁定为只读。</div></div>"
             },
             {
                 "type": "password",

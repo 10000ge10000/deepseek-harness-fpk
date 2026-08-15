@@ -11,6 +11,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 VERSION="${VERSION:-0.1.0-rc.6}"
 NODE_VERSION="${NODE_VERSION:-24.4.0}"
 TARBALL_ARCH="${TARBALL_ARCH:-amd64}"
+PNPM_VERSION="${PNPM_VERSION:-10.14.0}"
 OUTPUT_TGZ="${OUTPUT_TGZ:-${REPO_ROOT}/app_${TARBALL_ARCH}.tgz}"
 
 case "$TARBALL_ARCH" in
@@ -50,6 +51,13 @@ chmod +x "${WORK_DIR}/app_root/bin/node"
 cp -a "${WORK_DIR}/dsh-web/node_modules" "${WORK_DIR}/app_root/node_modules"
 cp "${WORK_DIR}/dsh-web/package.json" "${WORK_DIR}/app_root/package.json" 2>/dev/null || true
 
+# DSH 的 `plugin` 子命令会在 profile 目录直接执行 `pnpm`。此前 FPK 只
+# 复制了 node，主题/扩展安装会报 pnpm not found。固定版本随应用打包，
+# runner 已将 app_root/bin 放在 PATH 首位。
+echo "==> Bundling pnpm ${PNPM_VERSION} for DSH plugin management..."
+"${WORK_DIR}/node/bin/npm" install --global --prefix "${WORK_DIR}/app_root" "pnpm@${PNPM_VERSION}" --omit=dev --no-audit --no-fund
+test -x "${WORK_DIR}/app_root/bin/pnpm"
+
 # 复制 ui 目录和启动/反代脚本至 app_root (解压后位于 ${TRIM_APPDEST})
 if [ -d "${REPO_ROOT}/apps/deepseek-harness/fnos/ui" ]; then
     echo "==> Bundling desktop UI config..."
@@ -61,7 +69,7 @@ if [ -d "${REPO_ROOT}/apps/deepseek-harness/fnos/bin" ]; then
     chmod +x "${WORK_DIR}/app_root/bin/"* 2>/dev/null || true
 fi
 
-# 4. 执行独立补丁脚本（403 放行、一万AI分享单模型与飞牛工作区补丁）
+# 4. 执行飞牛目录选择与浏览器兼容补丁；不限制提供商或模型目录。
 python3 "${SCRIPT_DIR}/patch.py" "${WORK_DIR}/app_root"
 
 # 5. 在打包前校验所有 DeepSeek 模块的 JavaScript 语法，避免把无法启动的包交给 fnOS。

@@ -19,6 +19,17 @@ const DSH_BIN = path.join(APP_DIR, 'node_modules', '@deepseek-ai', 'dsh', 'lib',
 
 const PROXY_PORT = parseInt(process.env.PORT || '3080', 10);
 const DSH_PORT = 3081;
+const DEFAULT_BASE_URL = 'https://api.910501.xyz/v1';
+const LEGACY_MODEL = '一万AI分享DSH专用模型';
+
+// DSH 的可编辑设置、凭据和插件 profile 都由 HOME 下的 .dsh 管理。
+// 先确定飞牛工作区，才能在启动前安全迁移旧配置。
+let WORKSPACE_DIR = VAR_DIR;
+if (fs.existsSync('/vol1/@appshare/DeepSeekHarness')) {
+    WORKSPACE_DIR = '/vol1/@appshare/DeepSeekHarness';
+} else if (fs.existsSync('/vol1')) {
+    WORKSPACE_DIR = '/vol1';
+}
 
 // 读取向导配置变量 (wizard_variables)
 const dshEnv = { ...process.env };
@@ -45,21 +56,68 @@ if (fs.existsSync(wizardVarsFile)) {
     }
 }
 
-// 自动注入「一万AI分享」定制端点与模型配置
-const customBaseUrl = 'https://api.910501.xyz/v1';
-const customApiKey = dshEnv.wizard_api_key || dshEnv.api_key || '';
-const customModel = '一万AI分享DSH专用模型';
+// 向导 Key 仅在首次启动时写入 DSH 的可编辑凭据存储。
+// 不映射为 DEEPSEEK_API_KEY：该环境变量优先级最高，DSH 会按设计把它
+// 标成只读，用户便无法在 Models 页面替换为自己的 DeepSeek API Key。
+const wizardApiKey = dshEnv.wizard_api_key || dshEnv.api_key || dshEnv.DEEPSEEK_API_KEY || dshEnv.OPENAI_API_KEY || '';
+delete dshEnv.wizard_api_key;
+delete dshEnv.api_key;
+delete dshEnv.DEEPSEEK_API_KEY;
+delete dshEnv.OPENAI_API_KEY;
+delete dshEnv.DSH_DEFAULT_MODEL;
+delete dshEnv.DSH_MODEL;
 const customReasoning = 'high';
 
-dshEnv.DEEPSEEK_BASE_URL = customBaseUrl;
-dshEnv.OPENAI_BASE_URL = customBaseUrl;
-if (customApiKey) {
-    dshEnv.DEEPSEEK_API_KEY = customApiKey;
-    dshEnv.OPENAI_API_KEY = customApiKey;
+// 端点只作为未配置 Models 页时的默认值。用户在 Models 页保存自己的 base URL
+// 后会立即优先使用设置层，无需重启。
+if (!dshEnv.DEEPSEEK_BASE_URL) {
+    dshEnv.DEEPSEEK_BASE_URL = DEFAULT_BASE_URL;
 }
-dshEnv.DSH_DEFAULT_MODEL = customModel;
-dshEnv.DSH_MODEL = customModel;
-dshEnv.DSH_REASONING_EFFORT = customReasoning;
+
+function appendEditableCredential(apiKey) {
+    if (!apiKey) return false;
+    const credentialFile = path.join(WORKSPACE_DIR, '.dsh', '.credentials.yaml');
+    try {
+        let content = '';
+        if (fs.existsSync(credentialFile)) {
+            content = fs.readFileSync(credentialFile, 'utf-8');
+            // 早期版本会在可共享的工作区中留下权限过宽的凭据文件。新版 DSH
+            // 会拒绝启动，因此即使 Key 已存在也必须在每次启动前收紧权限。
+            fs.chmodSync(credentialFile, 0o600);
+            if (/^\s*DEEPSEEK_API_KEY\s*:/m.test(content)) return false;
+        } else {
+            fs.mkdirSync(path.dirname(credentialFile), { recursive: true, mode: 0o700 });
+        }
+        const separator = content.length === 0 || content.endsWith('\n') ? '' : '\n';
+        fs.writeFileSync(credentialFile, `${content}${separator}DEEPSEEK_API_KEY: ${JSON.stringify(apiKey)}\n`, {
+            encoding: 'utf-8',
+            mode: 0o600
+        });
+        fs.chmodSync(credentialFile, 0o600);
+        return true;
+    } catch (error) {
+        console.warn('[Runner] 初始化可编辑 API 凭据失败:', error.message);
+        return false;
+    }
+}
+
+function migrateLegacyDefaultModel() {
+    const settingsFile = path.join(WORKSPACE_DIR, '.dsh', 'settings.yaml');
+    if (!fs.existsSync(settingsFile)) return false;
+    try {
+        const source = fs.readFileSync(settingsFile, 'utf-8');
+        const legacyModel = /^(\s*model:\s*)(?:"一万AI分享DSH专用模型"|'一万AI分享DSH专用模型'|一万AI分享DSH专用模型)(\s*(?:#.*)?)$/m;
+        if (!legacyModel.test(source)) return false;
+        fs.writeFileSync(settingsFile, source.replace(legacyModel, '$1deepseek-v4-flash$2'), 'utf-8');
+        return true;
+    } catch (error) {
+        console.warn('[Runner] 迁移旧默认模型失败:', error.message);
+        return false;
+    }
+}
+
+const seededCredential = appendEditableCredential(wizardApiKey);
+const migratedModel = migrateLegacyDefaultModel();
 
 // 强力 Polyfill 脚本：全面覆盖 window, self, globalThis, Crypto.prototype
 const POLYFILL_SCRIPT = `<script>
@@ -112,15 +170,9 @@ const POLYFILL_SCRIPT = `<script>
 </script>`;
 
 console.log(`[Runner] 正在启动 DeepSeek Harness 后台服务 (127.0.0.1:${DSH_PORT})...`);
-console.log(`[Runner] 内置 API 端点: ${customBaseUrl}, 默认模型: ${customModel}, 推理强度: ${customReasoning}`);
-
-// 确定与飞牛文件管理互通的工作区目录
-let WORKSPACE_DIR = VAR_DIR;
-if (fs.existsSync('/vol1/@appshare/DeepSeekHarness')) {
-    WORKSPACE_DIR = '/vol1/@appshare/DeepSeekHarness';
-} else if (fs.existsSync('/vol1')) {
-    WORKSPACE_DIR = '/vol1';
-}
+console.log(`[Runner] 默认 API 端点: ${dshEnv.DEEPSEEK_BASE_URL}，Models 页面可覆盖；默认推理强度: ${customReasoning}`);
+if (seededCredential) console.log('[Runner] 已将向导 API Key 初始化为可编辑凭据');
+if (migratedModel) console.log('[Runner] 已迁移旧的一万AI分享默认模型配置');
 
 const dshProcess = spawn(NODE_BIN, [DSH_BIN, 'web', '--host', '127.0.0.1', '--port', String(DSH_PORT)], {
     cwd: WORKSPACE_DIR,
