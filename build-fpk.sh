@@ -105,13 +105,12 @@ if [ -d "$PKG_DIR/ui/images" ] && [ -f "$PKG_DIR/ICON_256.PNG" ]; then
     cp "$PKG_DIR/ICON_256.PNG" "$PKG_DIR/ui/images/256.png"
 fi
 
-# 10. Ensure permissions for lifecycle scripts
+# 10. Ensure permissions for all directories and lifecycle scripts
+find "$PKG_DIR" -type d -exec chmod 755 {} +
+find "$PKG_DIR" -type f -exec chmod 644 {} +
 chmod -R 755 "$PKG_DIR/cmd"
 if [ -d "$PKG_DIR/wizard" ]; then
     chmod -R 755 "$PKG_DIR/wizard"
-fi
-if [ -d "$PKG_DIR/config" ]; then
-    chmod -R 755 "$PKG_DIR/config"
 fi
 
 # 11. manifest
