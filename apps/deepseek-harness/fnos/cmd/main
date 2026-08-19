@@ -41,7 +41,7 @@ start_process() {
     fi
 
     export PATH="${TRIM_APPDEST}/bin:$PATH"
-    export HOME="${TRIM_APPDEST}"
+    export HOME="${TRIM_PKGVAR}"
     export TRIM_APPDEST="${TRIM_APPDEST}"
     export TRIM_PKGVAR="${TRIM_PKGVAR}"
 
@@ -89,6 +89,7 @@ stop_process() {
     # 清理所有残留进程
     pkill -9 -f "${TRIM_APPDEST}/bin/runner.js" 2>/dev/null || true
     pkill -9 -f "@deepseek-ai/dsh" 2>/dev/null || true
+    pkill -9 -f "proxy.js" 2>/dev/null || true
     rm -f "${PID_FILE}" 2>/dev/null || true
     log_msg "Stopped successfully"
     return 0
@@ -121,6 +122,11 @@ stop)
     echo "✓ 已停止"
     exit 0
     ;;
+uninstall)
+    stop_process
+    echo "✓ 已清理"
+    exit 0
+    ;;
 status)
     if status_process; then
         echo "✓ 服务运行中"
@@ -142,7 +148,7 @@ restart)
     fi
     ;;
 *)
-    echo "Usage: $0 {start|stop|status|restart}"
+    echo "Usage: $0 {start|stop|status|restart|uninstall}"
     exit 1
     ;;
 esac

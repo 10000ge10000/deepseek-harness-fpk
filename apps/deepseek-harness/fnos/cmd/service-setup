@@ -7,35 +7,45 @@ APP_DIR="${TRIM_APPDEST}"
 APP_DATA_DIR="${TRIM_PKGVAR}"
 
 export PATH="${APP_DIR}/bin:$PATH"
-export HOME="${APP_DIR}"
+export HOME="${TRIM_PKGVAR}"
 
 # 使用单一 Node 进程统一调度器 runner.js
 SERVICE_COMMAND="${APP_DIR}/bin/node ${APP_DIR}/bin/runner.js"
 SVC_BACKGROUND=y
 SVC_WRITE_PID=y
 SVC_CWD="${TRIM_PKGVAR}"
-SVC_WAIT_TIMEOUT=10
+SVC_WAIT_TIMEOUT=15
 
-service_postinst() {
-    mkdir -p "${TRIM_PKGVAR}/config" 2>/dev/null || true
-    
-    # 创建并打通与飞牛文件管理直接互通的应用工作区目录
+service_prestart() {
+    # 1. 启动前强制清理可能占用端口的残留进程，防止 EADDRINUSE 报错
+    pkill -9 -f "runner.js" 2>/dev/null || true
+    pkill -9 -f "dsh" 2>/dev/null || true
+    pkill -9 -f "proxy.js" 2>/dev/null || true
+    rm -f "${PID_FILE}" 2>/dev/null || true
+
+    # 2. 如果向导跳过 (用户选以后配置)，确保创建空的向导变量文件，防止状态机空检查异常
+    if [ ! -f "${TRIM_PKGVAR}/wizard_variables" ]; then
+        touch "${TRIM_PKGVAR}/wizard_variables" 2>/dev/null || true
+    fi
+
+    # 3. 确保存储和配置目录存在且具备写权限
+    mkdir -p "${TRIM_PKGVAR}/config" "${TRIM_PKGVAR}/data" 2>/dev/null || true
+
+    # 4. 确保飞牛共享目录打通
     SHARE_WORKSPACE="/vol1/@appshare/DeepSeekHarness"
     if [ -d "/vol1" ]; then
         mkdir -p "${SHARE_WORKSPACE}/workspace" "${SHARE_WORKSPACE}/data" 2>/dev/null || true
         chmod -R 777 "${SHARE_WORKSPACE}" 2>/dev/null || true
-        
-        # 将 @appdata/data 软链接指向 @appshare/DeepSeekHarness
-        if [ -d "${TRIM_PKGVAR}/data" ] && [ ! -L "${TRIM_PKGVAR}/data" ]; then
-            cp -a "${TRIM_PKGVAR}/data/." "${SHARE_WORKSPACE}/data/" 2>/dev/null || true
-            rm -rf "${TRIM_PKGVAR}/data"
-        fi
-        ln -sf "${SHARE_WORKSPACE}" "${TRIM_PKGVAR}/data" 2>/dev/null || true
+        ln -sfn "${SHARE_WORKSPACE}" "${TRIM_PKGVAR}/data" 2>/dev/null || true
     fi
 }
 
+service_postinst() {
+    service_prestart
+}
+
 service_postupgrade() {
-    service_postinst
+    service_prestart
 }
 
 service_preuninst() {
@@ -49,3 +59,4 @@ service_preuninst() {
 service_poststop() {
     service_preuninst
 }
+

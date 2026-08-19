@@ -119,7 +119,7 @@ function migrateLegacyDefaultModel() {
 const seededCredential = appendEditableCredential(wizardApiKey);
 const migratedModel = migrateLegacyDefaultModel();
 
-// 强力 Polyfill 脚本：全面覆盖 window, self, globalThis, Crypto.prototype
+// 强力 Polyfill 脚本：全面覆盖 window, self, globalThis, Crypto.prototype 以及 AbortSignal.any / AbortSignal.timeout
 const POLYFILL_SCRIPT = `<script>
 (function() {
   function createUUID() {
@@ -128,14 +128,48 @@ const POLYFILL_SCRIPT = `<script>
         return (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16);
       });
     }
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
+    return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, function(c) {
+      return (c ^ (Math.floor(Math.random() * 256)) & (15 >> (c / 4))).toString(16);
     });
   }
 
   try {
     var g = typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : typeof self !== 'undefined' ? self : this;
+    
+    // 1. AbortSignal.any Polyfill (解决华为平板/安卓老旧浏览器/微信WebView "AbortSignal.any is not a function")
+    if (typeof g.AbortSignal !== 'undefined' && !g.AbortSignal.any) {
+      g.AbortSignal.any = function(signals) {
+        var controller = new AbortController();
+        if (!signals || !signals.length) return controller.signal;
+        for (var i = 0; i < signals.length; i++) {
+          var s = signals[i];
+          if (!s) continue;
+          if (s.aborted) {
+            controller.abort(s.reason);
+            return controller.signal;
+          }
+          s.addEventListener('abort', function() {
+            controller.abort(this.reason);
+          }, { once: true });
+        }
+        return controller.signal;
+      };
+    }
+
+    // 2. AbortSignal.timeout Polyfill
+    if (typeof g.AbortSignal !== 'undefined' && !g.AbortSignal.timeout) {
+      g.AbortSignal.timeout = function(ms) {
+        var controller = new AbortController();
+        setTimeout(function() {
+          var err = new Error('The operation timed out');
+          err.name = 'TimeoutError';
+          controller.abort(err);
+        }, ms);
+        return controller.signal;
+      };
+    }
+
+    // 3. crypto.randomUUID Polyfill (解决局域网非安全上下文)
     if (!g.crypto) {
       try { g.crypto = {}; } catch(e){}
     }
@@ -162,6 +196,18 @@ const POLYFILL_SCRIPT = `<script>
           enumerable: true
         });
       } catch (e) {}
+    }
+
+    // 4. Promise.withResolvers Polyfill
+    if (typeof Promise !== 'undefined' && !Promise.withResolvers) {
+      Promise.withResolvers = function() {
+        var resolve, reject;
+        var promise = new Promise(function(res, rej) {
+          resolve = res;
+          reject = rej;
+        });
+        return { promise: promise, resolve: resolve, reject: reject };
+      };
     }
   } catch (e) {
     console.warn('[DSH Polyfill] 初始化异常:', e);
