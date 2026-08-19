@@ -69,30 +69,25 @@ jobs:
           set -euo pipefail
 
           APP_VER=$(grep "^version" apps/deepseek-harness/fnos/manifest | awk -F'=' '{print $2}' | tr -d ' ')
-          BUNDLED_DSH_VER=$(node - <<'NODE'
-          const fs = require('fs')
-          const source = fs.readFileSync('scripts/apps/deepseek-harness/build.sh', 'utf8')
-          const match = source.match(/^VERSION="\$\{VERSION:-([^}]+)\}"$/m)
-          if (!match) process.exit(1)
-          process.stdout.write(match[1])
-          NODE
-          )
+          LATEST_NPM_VER=$(npm view @deepseek-ai/dsh@latest version 2>/dev/null || echo "0.1.0-rc.7")
+
           if [ "$EVENT_NAME" = "schedule" ]; then
-            # 定时任务以 npm 上游为唯一版本来源，不能继续复用 manifest 的旧版本。
-            TARGET_VER=$(npm view @deepseek-ai/dsh@latest version)
-            DSH_VER="$TARGET_VER"
+            # 定时任务以 npm 官方最新版本为准
+            TARGET_VER="$LATEST_NPM_VER"
+            DSH_VER="$LATEST_NPM_VER"
           elif [ -n "$VERSION_INPUT" ]; then
             TARGET_VER="$VERSION_INPUT"
-            DSH_VER="${DSH_VERSION_INPUT:-$BUNDLED_DSH_VER}"
+            DSH_VER="${DSH_VERSION_INPUT:-$LATEST_NPM_VER}"
           elif [ -n "$DSH_VERSION_INPUT" ]; then
             TARGET_VER="$DSH_VERSION_INPUT"
             DSH_VER="$DSH_VERSION_INPUT"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             TARGET_VER="${GITHUB_REF#refs/tags/v}"
-            DSH_VER="$BUNDLED_DSH_VER"
+            # 自动优先拉取官方 latest npm 包进行封装打包
+            DSH_VER="${DSH_VERSION_INPUT:-$LATEST_NPM_VER}"
           else
             TARGET_VER="$APP_VER"
-            DSH_VER="$BUNDLED_DSH_VER"
+            DSH_VER="$LATEST_NPM_VER"
           fi
 
           if [ -z "$TARGET_VER" ] || [ -z "$DSH_VER" ]; then

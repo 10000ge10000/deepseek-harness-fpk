@@ -8,7 +8,12 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
-VERSION="${VERSION:-0.1.0-rc.6}"
+# 默认自动解析官方 npm 的 latest 版本，网络不可达时兜底为 0.1.0-rc.7
+if [ -z "${VERSION:-}" ] || [ "${VERSION}" = "latest" ]; then
+    RESOLVED_VER=$(npm view @deepseek-ai/dsh@latest version 2>/dev/null || echo "0.1.0-rc.7")
+    VERSION="${RESOLVED_VER}"
+fi
+
 NODE_VERSION="${NODE_VERSION:-24.4.0}"
 TARBALL_ARCH="${TARBALL_ARCH:-amd64}"
 PNPM_VERSION="${PNPM_VERSION:-10.14.0}"
