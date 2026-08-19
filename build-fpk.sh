@@ -105,7 +105,16 @@ if [ -d "$PKG_DIR/ui/images" ] && [ -f "$PKG_DIR/ICON_256.PNG" ]; then
     cp "$PKG_DIR/ICON_256.PNG" "$PKG_DIR/ui/images/256.png"
 fi
 
-# 10. manifest
+# 10. Ensure permissions for lifecycle scripts
+chmod -R 755 "$PKG_DIR/cmd"
+if [ -d "$PKG_DIR/wizard" ]; then
+    chmod -R 755 "$PKG_DIR/wizard"
+fi
+if [ -d "$PKG_DIR/config" ]; then
+    chmod -R 755 "$PKG_DIR/config"
+fi
+
+# 11. manifest
 cp "$APP_DIR/fnos/manifest" "$PKG_DIR/manifest"
 if [ -n "$VERSION" ]; then
     sed -i.tmp "s/^version.*/version         = ${VERSION}/" "$PKG_DIR/manifest"
