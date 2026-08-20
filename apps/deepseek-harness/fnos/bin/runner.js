@@ -116,8 +116,25 @@ function migrateLegacyDefaultModel() {
     }
 }
 
+function ensurePublicSiteContextLimit() {
+    const settingsFile = path.join(WORKSPACE_DIR, '.dsh', 'settings.yaml');
+    try {
+        if (!fs.existsSync(settingsFile)) return false;
+        let content = fs.readFileSync(settingsFile, 'utf-8');
+        if (!content.includes('defaultContextWindow:') && !content.includes('llm-deepseek:')) {
+            const extraConfig = `\nllm-deepseek:\n  defaultContextWindow: 200000\n  models:\n    - id: deepseek-v4-flash\n      name: DeepSeek-V4-Flash\n      contextWindow: 200000\n    - id: deepseek-v4-pro\n      name: DeepSeek-V4-Pro\n      contextWindow: 200000\n`;
+            fs.appendFileSync(settingsFile, extraConfig, 'utf-8');
+            return true;
+        }
+    } catch (e) {
+        console.warn('[Runner] 初始化公益站点模型上下文限制失败:', e.message);
+    }
+    return false;
+}
+
 const seededCredential = appendEditableCredential(wizardApiKey);
 const migratedModel = migrateLegacyDefaultModel();
+const contextLimitInjected = ensurePublicSiteContextLimit();
 
 // 强力 Polyfill 脚本：全面覆盖 window, self, globalThis, Crypto.prototype 以及 AbortSignal.any / AbortSignal.timeout
 const POLYFILL_SCRIPT = `<script>
@@ -219,6 +236,7 @@ console.log(`[Runner] 正在启动 DeepSeek Harness 后台服务 (127.0.0.1:${DS
 console.log(`[Runner] 默认 API 端点: ${dshEnv.DEEPSEEK_BASE_URL}，Models 页面可覆盖；默认推理强度: ${customReasoning}`);
 if (seededCredential) console.log('[Runner] 已将向导 API Key 初始化为可编辑凭据');
 if (migratedModel) console.log('[Runner] 已迁移旧的一万AI分享默认模型配置');
+if (contextLimitInjected) console.log('[Runner] 已为内置公益站点模型配置 200k 上下文上限保护 (支持自动静默压缩)');
 
 const dshProcess = spawn(NODE_BIN, [DSH_BIN, 'web', '--host', '127.0.0.1', '--port', String(DSH_PORT)], {
     cwd: WORKSPACE_DIR,
