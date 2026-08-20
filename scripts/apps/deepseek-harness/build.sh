@@ -96,7 +96,7 @@ if [ "${SYNTAX_ERRORS}" -ne 0 ]; then
 fi
 
 # 6. Build app.tgz
-tar -czf "${OUTPUT_TGZ}" -C "${WORK_DIR}/app_root" .
+tar --owner=0 --group=0 --numeric-owner -czf "${OUTPUT_TGZ}" -C "${WORK_DIR}/app_root" .
 cp "${OUTPUT_TGZ}" "${REPO_ROOT}/app.tgz" 2>/dev/null || true
 echo "==> Built ${OUTPUT_TGZ} for DeepSeek Harness ${VERSION}"
 du -h "${OUTPUT_TGZ}"

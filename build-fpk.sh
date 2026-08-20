@@ -139,7 +139,7 @@ cd "$PKG_DIR"
 [ -d "config" ] || error "config missing"
 [ -f "ICON.PNG" ] || error "ICON.PNG missing"
 [ -f "ICON_256.PNG" ] || error "ICON_256.PNG missing"
-tar -czf "$REPO_ROOT/$FPK_NAME" *
+tar --owner=0 --group=0 --numeric-owner -czf "$REPO_ROOT/$FPK_NAME" *
 cd "$REPO_ROOT"
 
 rm -rf "$WORK_DIR"
