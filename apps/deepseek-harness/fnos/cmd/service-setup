@@ -18,10 +18,14 @@ SVC_WAIT_TIMEOUT=15
 
 service_prestart() {
     # 1. 启动前强制清理可能占用端口的残留进程，防止 EADDRINUSE 报错
+    if [ -f "${PID_FILE}" ]; then
+        local old_pid=$(head -n 1 "${PID_FILE}" 2>/dev/null | tr -d '[:space:]')
+        if [ -n "${old_pid}" ]; then
+            kill -9 "${old_pid}" 2>/dev/null || true
+        fi
+        rm -f "${PID_FILE}" 2>/dev/null || true
+    fi
     pkill -9 -f "runner.js" 2>/dev/null || true
-    pkill -9 -f "dsh" 2>/dev/null || true
-    pkill -9 -f "proxy.js" 2>/dev/null || true
-    rm -f "${PID_FILE}" 2>/dev/null || true
 
     # 2. 如果向导跳过 (用户选以后配置)，确保创建空的向导变量文件，防止状态机空检查异常
     if [ ! -f "${TRIM_PKGVAR}/wizard_variables" ]; then
@@ -49,11 +53,14 @@ service_postupgrade() {
 }
 
 service_preuninst() {
+    if [ -f "${PID_FILE}" ]; then
+        local old_pid=$(head -n 1 "${PID_FILE}" 2>/dev/null | tr -d '[:space:]')
+        if [ -n "${old_pid}" ]; then
+            kill -9 "${old_pid}" 2>/dev/null || true
+        fi
+        rm -f "${PID_FILE}" 2>/dev/null || true
+    fi
     pkill -9 -f "runner.js" 2>/dev/null || true
-    pkill -9 -f "deepseek-harness" 2>/dev/null || true
-    pkill -9 -f "dsh" 2>/dev/null || true
-    pkill -9 -f "proxy.js" 2>/dev/null || true
-    rm -f "${PID_FILE}" 2>/dev/null || true
 }
 
 service_poststop() {

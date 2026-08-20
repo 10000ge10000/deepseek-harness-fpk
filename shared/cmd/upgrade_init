@@ -1,3 +1,7 @@
 #!/bin/bash
-. $(dirname $0)/installer
-$(basename $0) > $TRIM_TEMP_LOGFILE
+. "$(dirname "$0")/installer"
+if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+    "$(basename "$0")" > "$TRIM_TEMP_LOGFILE" 2>&1
+else
+    "$(basename "$0")"
+fi
