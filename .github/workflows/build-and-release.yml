@@ -69,7 +69,10 @@ jobs:
           set -euo pipefail
 
           APP_VER=$(grep "^version" apps/deepseek-harness/fnos/manifest | awk -F'=' '{print $2}' | tr -d ' ')
-          LATEST_NPM_VER=$(npm view @deepseek-ai/dsh@latest version 2>/dev/null || echo "0.1.0-rc.7")
+          LATEST_NPM_VER=$(npm view @deepseek-ai/dsh dist-tags.next 2>/dev/null || true)
+          if [ -z "$LATEST_NPM_VER" ]; then
+            LATEST_NPM_VER=$(npm view @deepseek-ai/dsh@latest version 2>/dev/null || echo "0.1.0-rc.8")
+          fi
 
           if [ "$EVENT_NAME" = "schedule" ]; then
             # 定时任务以 npm 官方最新版本为准
@@ -83,7 +86,7 @@ jobs:
             DSH_VER="$DSH_VERSION_INPUT"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             TARGET_VER="${GITHUB_REF#refs/tags/v}"
-            # 自动优先拉取官方 latest npm 包进行封装打包
+            # 自动优先拉取官方 latest/next npm 包进行封装打包
             DSH_VER="${DSH_VERSION_INPUT:-$LATEST_NPM_VER}"
           else
             TARGET_VER="$APP_VER"
@@ -104,7 +107,7 @@ jobs:
           SHOULD_BUILD=true
           PUBLISH_RELEASE=false
           if [ "$EVENT_NAME" = "schedule" ]; then
-            if [ "$TARGET_VER" = "$BUNDLED_DSH_VER" ]; then
+            if [ "$TARGET_VER" = "${APP_VER:-}" ]; then
               SHOULD_BUILD=false
               echo "上游 DSH 仍为当前打包版本 ${TARGET_VER}，跳过构建。"
             elif gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
