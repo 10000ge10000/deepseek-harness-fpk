@@ -8,11 +8,17 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
-# 默认自动解析官方 npm 的 next / latest 版本，网络不可达时兜底为 0.1.0-rc.8
+# 版本兜底值以 meta.env 为单一来源
+DSH_FALLBACK_VERSION="${DSH_FALLBACK_VERSION:-$(sed -n 's/^DSH_FALLBACK_VERSION=//p' "${SCRIPT_DIR}/meta.env" 2>/dev/null | tr -d '[:space:]')}"
+if [ -z "${DSH_FALLBACK_VERSION}" ]; then
+    DSH_FALLBACK_VERSION="0.1.0-rc.8"
+fi
+
+# 默认自动解析官方 npm 的 next / latest 版本，网络不可达时兜底为 meta.env 中的值
 if [ -z "${VERSION:-}" ] || [ "${VERSION}" = "latest" ]; then
     RESOLVED_VER=$(npm view @deepseek-ai/dsh dist-tags.next 2>/dev/null || true)
     if [ -z "$RESOLVED_VER" ]; then
-        RESOLVED_VER=$(npm view @deepseek-ai/dsh@latest version 2>/dev/null || echo "0.1.0-rc.8")
+        RESOLVED_VER=$(npm view @deepseek-ai/dsh@latest version 2>/dev/null || echo "${DSH_FALLBACK_VERSION}")
     fi
     VERSION="${RESOLVED_VER}"
 fi

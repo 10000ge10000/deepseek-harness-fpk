@@ -2,6 +2,11 @@
 
 APPNAME="deepseek-harness"
 
+# 服务端口定义（与 manifest 的 service_port、runner.js 保持一致）
+SERVICE_PORT=3080
+INTERNAL_PORT=3081
+PORT_PATTERN=":(${SERVICE_PORT}|${INTERNAL_PORT}) "
+
 # 自动推导应用与数据目录
 if [ -z "${TRIM_APPDEST:-}" ]; then
     if [ -e "/var/apps/${APPNAME}/target" ]; then
@@ -46,7 +51,7 @@ instance_alive() {
 # 端口 3080/3081 已被本应用实例占用时，找到对应的 runner 或 dsh 进程
 port_owner_pid() {
     local owner
-    owner=$(netstat -tlnp 2>/dev/null | grep -E ':(3080|3081) ' | sed -n 's/.*[[:space:]]\([0-9]\+\)\/[A-Za-z0-9_+.-]*[[:space:]]*$/\1/p' | sort -un | head -n 1)
+    owner=$(netstat -tlnp 2>/dev/null | grep -E "${PORT_PATTERN}" | sed -n 's/.*[[:space:]]\([0-9]\+\)\/[A-Za-z0-9_+.-]*[[:space:]]*$/\1/p' | sort -un | head -n 1)
     [ -n "${owner}" ] && echo "${owner}"
 }
 
@@ -99,15 +104,18 @@ start_process() {
     printf "%s" "${new_pid}" > "${PID_FILE}"
     log_msg "Started with PID: ${new_pid}"
 
-    # 验证是否成功启动
-    sleep 1
-    if kill -0 "${new_pid}" 2>/dev/null; then
-        return 0
-    else
-        log_msg "Failed to start or process exited immediately"
-        rm -f "${PID_FILE}"
-        return 1
-    fi
+    # 验证是否成功启动：循环探测，避免 1 秒后才崩溃被误报为成功
+    local count=0
+    while [ ${count} -lt 10 ]; do
+        if ! kill -0 "${new_pid}" 2>/dev/null; then
+            log_msg "Failed to start or process exited early (after ${count}s)"
+            rm -f "${PID_FILE}"
+            return 1
+        fi
+        sleep 1
+        count=$((count + 1))
+    done
+    return 0
 }
 
 stop_process() {
@@ -134,27 +142,30 @@ stop_process() {
 
     # 按端口（3080/3081）清理持有者：appcenter 可能直启的 dsh 命令行不含特征串
     local port_pids
-    port_pids=$(netstat -tlnp 2>/dev/null | grep -E ':(3080|3081) ' | sed -n 's/.*[[:space:]]\([0-9]\+\)\/[A-Za-z0-9_+.-]*[[:space:]]*$//p' | sort -un)
+    port_pids=$(netstat -tlnp 2>/dev/null | grep -E "${PORT_PATTERN}" | sed -n 's/.*[[:space:]]\([0-9]\+\)\/[A-Za-z0-9_+.-]*[[:space:]]*$/\1/p' | sort -un)
     for pid in $(echo "${port_pids}"); do
         [ -z "${pid}" ] && continue
         [ "${pid}" = "$$" ] && continue
         kill -9 "${pid}" 2>/dev/null || true
     done
 
-    # 收集所有残留进程 PID（runner / dsh / proxy），排除自身与父 shell，先收集后杀
-    # 注意：不能用裸 pkill -f，会误杀命令行中带相同特征串的执行 shell
+    # 收集所有残留进程 PID（runner / dsh），排除自身与父 shell，先收集后杀
+    # 注意：不能用裸 pkill -f，会误杀命令行中带相同特征串的执行 shell；
+    # 模式必须带路径限定，避免命中仅文件名相同的无关进程
     local cleanup_pids
-    cleanup_pids=$(pgrep -f "bin/runner.js" 2>/dev/null; pgrep -f "@deepseek-ai/dsh" 2>/dev/null; pgrep -f "proxy.js" 2>/dev/null; pgrep -f "bin.js web" 2>/dev/null)
+    cleanup_pids=$(pgrep -f "bin/runner\.js" 2>/dev/null; pgrep -f "@deepseek-ai/dsh.*bin\.js web" 2>/dev/null; pgrep -f "bin/proxy\.js" 2>/dev/null)
     for pid in $(echo "${cleanup_pids}" | sort -un); do
         [ -z "${pid}" ] && continue
         [ "${pid}" = "$$" ] && continue
         kill -9 "${pid}" 2>/dev/null || true
     done
 
-    # 兜底：清理后确认端口已释放，否则停止并不彻底
+    # 兜底：清理后确认端口已释放，否则如实报告失败，不输出伪成功
     sleep 1
-    if ss -tln 2>/dev/null | grep -qE ':(3080|3081) '; then
-        log_msg "WARNING: port 3080/3081 still bound after stop"
+    if ss -tln 2>/dev/null | grep -qE "${PORT_PATTERN}"; then
+        log_msg "ERROR: port 3080/3081 still bound after stop"
+        rm -f "${PID_FILE}" 2>/dev/null || true
+        return 1
     fi
     rm -f "${PID_FILE}" 2>/dev/null || true
     log_msg "Stopped successfully"
@@ -187,9 +198,13 @@ start)
     fi
     ;;
 stop)
-    stop_process
-    echo "✓ 已停止"
-    exit 0
+    if stop_process; then
+        echo "✓ 已停止"
+        exit 0
+    else
+        echo "✗ 停止失败：端口 3080/3081 仍被占用，请查看日志 ${LOG_FILE}"
+        exit 1
+    fi
     ;;
 uninstall)
     stop_process

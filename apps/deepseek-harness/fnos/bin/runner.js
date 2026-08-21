@@ -18,7 +18,7 @@ const NODE_BIN = path.join(APP_DIR, 'bin', 'node');
 const DSH_BIN = path.join(APP_DIR, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js');
 
 const PROXY_PORT = parseInt(process.env.PORT || '3080', 10);
-const DSH_PORT = 3081;
+const DSH_PORT = parseInt(process.env.DSH_PORT || '3081', 10);
 const DEFAULT_BASE_URL = 'https://api.910501.xyz/v1';
 const LEGACY_MODEL = '一万AI分享DSH专用模型';
 
@@ -96,7 +96,8 @@ function appendEditableCredential(apiKey) {
         fs.chmodSync(credentialFile, 0o600);
         return true;
     } catch (error) {
-        console.warn('[Runner] 初始化可编辑 API 凭据失败:', error.message);
+        // 凭据写失败时应用仍可启动，但用户在向导里填的 Key 不会生效，必须显著告警
+        console.error(`[Runner] 初始化可编辑 API 凭据失败: ${error.message}，向导填写的 API Key 不会生效，请检查 ${credentialFile} 所在目录的写权限`);
         return false;
     }
 }
@@ -122,7 +123,10 @@ function ensurePublicSiteContextLimit() {
         if (!fs.existsSync(settingsFile)) return false;
         let content = fs.readFileSync(settingsFile, 'utf-8');
         if (!content.includes('defaultContextWindow:') && !content.includes('llm-deepseek:')) {
-            const extraConfig = `\nllm-deepseek:\n  defaultContextWindow: 200000\n  models:\n    - id: deepseek-v4-flash\n      name: DeepSeek-V4-Flash\n      contextWindow: 200000\n    - id: deepseek-v4-pro\n      name: DeepSeek-V4-Pro\n      contextWindow: 200000\n`;
+            // 内置 catalog 已含 deepseek-v4-flash/pro，这里只注入上下文上限；
+            // 若同时写入 models 条目会与内置目录重复（正是 dedupeCatalogModels
+            // 要剔除的对象），导致注入被自我抵消。
+            const extraConfig = `\nllm-deepseek:\n  defaultContextWindow: 200000\n`;
             fs.appendFileSync(settingsFile, extraConfig, 'utf-8');
             return true;
         }
@@ -356,8 +360,27 @@ const proxyServer = http.createServer((clientReq, clientRes) => {
 
         if (isHtml) {
             let chunks = [];
-            proxyRes.on('data', chunk => chunks.push(chunk));
+            let total = 0;
+            let overflow = false;
+            // 超大响应不再缓冲注入，直接透传，避免内存放大
+            const MAX_HTML_BUFFER = 8 * 1024 * 1024;
+            proxyRes.on('data', chunk => {
+                total += chunk.length;
+                if (total > MAX_HTML_BUFFER) {
+                    overflow = true;
+                    if (!clientRes.headersSent) {
+                        clientRes.writeHead(proxyRes.statusCode, proxyRes.headers);
+                    }
+                    clientRes.write(chunk);
+                    return;
+                }
+                chunks.push(chunk);
+            });
             proxyRes.on('end', () => {
+                if (overflow) {
+                    clientRes.end();
+                    return;
+                }
                 let body = Buffer.concat(chunks).toString('utf-8');
                 if (body.includes('<head>')) {
                     body = body.replace('<head>', `<head>${POLYFILL_SCRIPT}`);
@@ -370,7 +393,7 @@ const proxyServer = http.createServer((clientReq, clientRes) => {
                 const resHeaders = { ...proxyRes.headers };
                 delete resHeaders['content-length'];
                 resHeaders['content-length'] = Buffer.byteLength(body, 'utf-8');
-                // 禁止浏览器缓存，确保每次获取最新代码
+                // HTML 禁止缓存，确保每次获取最新页面
                 resHeaders['cache-control'] = 'no-store, no-cache, must-revalidate';
                 resHeaders['pragma'] = 'no-cache';
 
@@ -378,11 +401,8 @@ const proxyServer = http.createServer((clientReq, clientRes) => {
                 clientRes.end(body);
             });
         } else {
-            // 对 JS/CSS 等静态资源也添加 no-cache 头
-            const resHeaders = { ...proxyRes.headers };
-            resHeaders['cache-control'] = 'no-store, no-cache, must-revalidate';
-            resHeaders['pragma'] = 'no-cache';
-            clientRes.writeHead(proxyRes.statusCode, resHeaders);
+            // JS/CSS 等带内容哈希的静态资源放行缓存，减少局域网重复回源
+            clientRes.writeHead(proxyRes.statusCode, proxyRes.headers);
             proxyRes.pipe(clientRes, { end: true });
         }
     });
@@ -425,22 +445,51 @@ proxyServer.on('upgrade', (req, socket, head) => {
     socket.on('error', () => proxySocket.destroy());
 });
 
+// 端口被占用等监听失败必须给出可诊断的输出，而非未捕获异常裸退
+proxyServer.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`[Runner] 端口 ${PROXY_PORT} 已被占用，请检查是否有残留实例（netstat -tlnp | grep :${PROXY_PORT}）`);
+    } else {
+        console.error(`[Runner] 代理监听失败 (${err.code || 'unknown'}):`, err.message);
+    }
+    try {
+        if (dshProcess && !dshProcess.killed) dshProcess.kill('SIGKILL');
+    } catch (e) {
+        console.error('[Runner] 终止 dsh 子进程失败:', e.message);
+    }
+    process.exit(1);
+});
+
 proxyServer.listen(PROXY_PORT, '0.0.0.0', () => {
     console.log(`[Runner] 透明代理已启动: http://0.0.0.0:${PROXY_PORT} -> http://127.0.0.1:${DSH_PORT}`);
 });
 
-// 优雅且极速的退出处理
+// 优雅退出：先 TERM 让 dsh 落盘会话/索引，宽限期后强制终止
+let shuttingDown = false;
 function shutdown() {
-    console.log('[Runner] 收到停止信号，正在立即终止服务...');
-    try {
-        if (dshProcess && !dshProcess.killed) {
-            dshProcess.kill('SIGKILL');
-        }
-    } catch (e) {}
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log('[Runner] 收到停止信号，正在停止服务...');
     try {
         proxyServer.close();
-    } catch (e) {}
-    process.exit(0);
+    } catch (e) {
+        console.error('[Runner] 关闭代理服务失败:', e.message);
+    }
+    if (dshProcess && !dshProcess.killed) {
+        dshProcess.kill('SIGTERM');
+        const grace = setTimeout(() => {
+            try {
+                if (!dshProcess.killed) dshProcess.kill('SIGKILL');
+            } catch (e) {
+                console.error('[Runner] 强制终止 dsh 子进程失败:', e.message);
+            }
+            process.exit(0);
+        }, 5000);
+        grace.unref();
+    } else {
+        process.exit(0);
+    }
+    // dsh 正常退出后由 exit 处理器负责退出进程
 }
 
 process.on('SIGTERM', shutdown);

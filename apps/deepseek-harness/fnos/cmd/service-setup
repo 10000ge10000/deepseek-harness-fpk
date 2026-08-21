@@ -11,13 +11,20 @@ export HOME="${TRIM_PKGVAR}"
 
 # 使用单一 Node 进程统一调度器 runner.js
 SERVICE_COMMAND="${APP_DIR}/bin/node ${APP_DIR}/bin/runner.js"
+
+# 服务端口定义（与 manifest 的 service_port、runner.js 保持一致）
+SERVICE_PORT=3080
+INTERNAL_PORT=3081
+PORT_PATTERN=":(${SERVICE_PORT}|${INTERNAL_PORT}) "
 SVC_BACKGROUND=y
 SVC_WRITE_PID=y
 SVC_CWD="${TRIM_PKGVAR}"
 SVC_WAIT_TIMEOUT=15
 
-service_prestart() {
-    # 1. 启动前强制清理可能占用端口的残留进程，防止 EADDRINUSE 报错
+# ---- 进程清理共享函数：prestart / preuninst / poststop 复用 ----
+
+# 杀掉 PID 文件记录的进程并移除 PID 文件
+kill_recorded_pid() {
     if [ -f "${PID_FILE}" ]; then
         local old_pid=$(head -n 1 "${PID_FILE}" 2>/dev/null | tr -d '[:space:]')
         if [ -n "${old_pid}" ]; then
@@ -25,17 +32,34 @@ service_prestart() {
         fi
         rm -f "${PID_FILE}" 2>/dev/null || true
     fi
-    # pkill -f 会匹配自身 shell（命令行含 "runner.js"），必须先收集 PID 再排除自身
-    for pid in $(pgrep -f "runner.js" 2>/dev/null); do
+}
+
+# 按命令行特征清理残留进程；pgrep -f 会匹配自身 shell，必须先收集 PID 再排除自身
+kill_pattern() {
+    local pattern="$1"
+    local pid
+    for pid in $(pgrep -f "${pattern}" 2>/dev/null); do
         [ -n "${pid}" ] && [ "${pid}" != "$$" ] && kill -9 "${pid}" 2>/dev/null || true
     done
+}
 
-    # 1b. 按端口清理 3080/3081 持有者（appcenter 直启的 dsh 命令行可能不含 runner.js 特征）
-    for pid in $(netstat -tlnp 2>/dev/null | grep -E ':(3080|3081) ' | sed -n 's/.*[[:space:]]\([0-9]\+\)\/[A-Za-z0-9_+.-]*[[:space:]]*$//p' | sort -un); do
+# 按端口清理 3080/3081 持有者（appcenter 直启的 dsh 命令行可能不含 runner.js 特征）
+kill_port_owners() {
+    local pid
+    for pid in $(netstat -tlnp 2>/dev/null | grep -E "${PORT_PATTERN}" | sed -n 's/.*[[:space:]]\([0-9]\+\)\/[A-Za-z0-9_+.-]*[[:space:]]*$/\1/p' | sort -un); do
         [ -z "${pid}" ] && continue
         [ "${pid}" = "$$" ] && continue
         kill -9 "${pid}" 2>/dev/null || true
     done
+}
+
+service_prestart() {
+    # 1. 启动前强制清理可能占用端口的残留进程，防止 EADDRINUSE 报错
+    kill_recorded_pid
+    kill_pattern "runner.js"
+
+    # 1b. 按端口清理 3080/3081 持有者
+    kill_port_owners
 
     # 2. 如果向导跳过 (用户选以后配置)，确保创建空的向导变量文件，防止状态机空检查异常
     if [ ! -f "${TRIM_PKGVAR}/wizard_variables" ]; then
@@ -63,16 +87,8 @@ service_postupgrade() {
 }
 
 service_preuninst() {
-    if [ -f "${PID_FILE}" ]; then
-        local old_pid=$(head -n 1 "${PID_FILE}" 2>/dev/null | tr -d '[:space:]')
-        if [ -n "${old_pid}" ]; then
-            kill -9 "${old_pid}" 2>/dev/null || true
-        fi
-        rm -f "${PID_FILE}" 2>/dev/null || true
-    fi
-    for pid in $(pgrep -f "runner.js" 2>/dev/null); do
-        [ -n "${pid}" ] && [ "${pid}" != "$$" ] && kill -9 "${pid}" 2>/dev/null || true
-    done
+    kill_recorded_pid
+    kill_pattern "runner.js"
 }
 
 service_poststop() {

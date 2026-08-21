@@ -19,7 +19,9 @@ def apply_patches(app_root):
                 try:
                     with open(p, 'r', encoding='utf-8', errors='ignore') as fp:
                         code = fp.read()
-                except Exception:
+                except Exception as e:
+                    # 静默跳过会导致补丁漏打且无迹可查，必须留下日志
+                    print(f"[!] 跳过无法读取的文件 {p}: {e}")
                     continue
 
                 changed = False
