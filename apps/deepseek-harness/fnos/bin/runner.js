@@ -132,9 +132,68 @@ function ensurePublicSiteContextLimit() {
     return false;
 }
 
+// 修复 "duplicate catalog model" 导致的 boot 失败（症状：UI 里所有会话消失）。
+// dsh-llm-deepseek 的内置 catalog 已含 deepseek-v4-flash / deepseek-v4-pro，
+// 若 settings.yaml 的 llm-deepseek.models 也写入了同名 id，启动时模型条目重复，
+// 插件树加载失败 -> dsh 直接退出 -> 会话列表为空。这里把用户配置中与内置
+// catalog 重复的条目剔除，保留新增的自定义模型。
+function dedupeCatalogModels() {
+    const settingsFile = path.join(WORKSPACE_DIR, '.dsh', 'settings.yaml');
+    try {
+        if (!fs.existsSync(settingsFile)) return false;
+        let content = fs.readFileSync(settingsFile, 'utf-8');
+        const builtinIds = ['deepseek-v4-flash', 'deepseek-v4-pro'];
+        const lines = content.split('\n');
+        let out = [];
+        let inModels = false;
+        let changed = false;
+        let skipTillBlank = false; // 跳过当前被剔除条目的后续属性行，直到下一个 '- id:' 或顶层键
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (/^\s{0,2}llm-deepseek:\s*$/.test(line)) {
+                out.push(line);
+                inModels = false;
+                skipTillBlank = false;
+                continue;
+            }
+            const isTopKey = /^\s{0,2}[a-zA-Z0-9_-]+:\s*$/.test(line);
+            if (isTopKey) {
+                inModels = /^\s{0,2}models:\s*$/.test(line);
+                skipTillBlank = false;
+                out.push(line);
+                continue;
+            }
+            if (/^\s+-\s+id:\s*['"]?([a-zA-Z0-9_.-]+)['"]?\s*$/.test(line)) {
+                const id = line.match(/^\s+-\s+id:\s*['"]?([a-zA-Z0-9_.-]+)['"]?\s*$/)[1];
+                if (inModels && builtinIds.includes(id)) {
+                    changed = true;
+                    skipTillBlank = true;
+                    continue;
+                }
+                skipTillBlank = false;
+                out.push(line);
+                continue;
+            }
+            if (skipTillBlank) continue; // 跳过被剔除条目的 name/contextWindow 等属性行
+            out.push(line);
+        }
+        if (changed) {
+            // 若剔除后 models 列表为空，直接删除整个 models 键（空列表会导致
+            // dsh 无模型可选；删除后 dsh 回落到内置目录）。
+            const cleaned = out.join('\n').replace(/\n?\s{2}models:\s*(?=\n[a-zA-Z0-9_-]+:|\s*$)/, '');
+            fs.writeFileSync(settingsFile, cleaned, 'utf-8');
+            return true;
+        }
+    } catch (e) {
+        console.warn('[Runner] 去重内置模型配置失败:', e.message);
+    }
+    return false;
+}
+
 const seededCredential = appendEditableCredential(wizardApiKey);
 const migratedModel = migrateLegacyDefaultModel();
 const contextLimitInjected = ensurePublicSiteContextLimit();
+const catalogDeduped = dedupeCatalogModels();
 
 // 强力 Polyfill 脚本：全面覆盖 window, self, globalThis, Crypto.prototype 以及 AbortSignal.any / AbortSignal.timeout
 const POLYFILL_SCRIPT = `<script>
@@ -237,6 +296,7 @@ console.log(`[Runner] 默认 API 端点: ${dshEnv.DEEPSEEK_BASE_URL}，Models �
 if (seededCredential) console.log('[Runner] 已将向导 API Key 初始化为可编辑凭据');
 if (migratedModel) console.log('[Runner] 已迁移旧的一万AI分享默认模型配置');
 if (contextLimitInjected) console.log('[Runner] 已为内置公益站点模型配置 200k 上下文上限保护 (支持自动静默压缩)');
+if (catalogDeduped) console.log('[Runner] 已剔除 llm-deepseek 配置中与内置目录重复的模型条目');
 
 const dshProcess = spawn(NODE_BIN, [DSH_BIN, 'web', '--host', '127.0.0.1', '--port', String(DSH_PORT)], {
     cwd: WORKSPACE_DIR,
