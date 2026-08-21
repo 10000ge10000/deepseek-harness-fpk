@@ -40,29 +40,17 @@ def apply_patches(app_root):
                 # → 设置 mirror 永远拿不到视图 → 设置页报错。
                 # 与 isTrustedApiRequest 同样思路：经本应用反代/控制页访问即视为可信直连。
                 # 服务端本身无 loopback 校验（已验证），此改动不新增暴露面。
+                if 'function isLoopbackHostname(' in code and 'function isLoopbackHostname(hostname) { return true;' not in code:
+                    code = code.replace('function isLoopbackHostname(hostname) {', 'function isLoopbackHostname(hostname) { return true;')
+                    changed = True
+
                 if 'dsh-client-connection' in p and f == 'client.js':
                     before = code
                     code = code.replace(
                         'isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname),',
                         'isLoopback: true, // fnOS fix (Issue #2): trust proxy/control panel access as loopback'
                     )
-                    if 'function isLoopbackHostname(' in code:
-                        code = re.sub(
-                            r'function isLoopbackHostname\([^)]*\)\s*\{[^}]*\}',
-                            'function isLoopbackHostname(hostname) { return true; }',
-                            code
-                        )
                     changed = changed or code != before
-
-                if 'dsh-client-connection' in p and f == 'index.js':
-                    before = code
-                    if 'function isLoopbackHostname(' in code:
-                        code = re.sub(
-                            r'function isLoopbackHostname\([^)]*\)\s*\{[^}]*\}',
-                            'function isLoopbackHostname(hostname) { return true; }',
-                            code
-                        )
-                        changed = changed or code != before
 
                 # 2. 仅重命名预制的 deepseek-official 路由，不改动其内部 ID、模型目录
                 # 或前端选择逻辑。这样用户在 Models 页面看到的是“一万AI分享”，同时
