@@ -33,6 +33,21 @@ def apply_patches(app_root):
                     code = code.replace('function isTrustedApiRequest(request, trustedHosts) {', 'function isTrustedApiRequest(request, trustedHosts) { return true;')
                     changed = True
 
+                # 1b. 修复浏览器端 "settings are unavailable in this browser"
+                # 根因：DSH 将 settings.describe 等 RPC 视为 loopback-only。经飞牛桌面
+                # iframe（http://<NAS_IP>:3080）打开时 location.hostname 非 loopback，
+                # 浏览器端 isLoopback=false → SettingsDescribeMirror persistence=memory
+                # → 设置 mirror 永远拿不到视图 → 设置页报错。
+                # 与 isTrustedApiRequest 同样思路：经本应用反代/控制页访问即视为可信直连。
+                # 服务端本身无 loopback 校验（已验证），此改动不新增暴露面。
+                if 'dsh-client-connection' in p and f == 'client.js':
+                    before = code
+                    code = code.replace(
+                        'isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname),',
+                        'isLoopback: true, // fnOS fix: settings RPC via desktop iframe (trust proxy/control panel access as loopback)'
+                    )
+                    changed = changed or code != before
+
                 # 2. 仅重命名预制的 deepseek-official 路由，不改动其内部 ID、模型目录
                 # 或前端选择逻辑。这样用户在 Models 页面看到的是“一万AI分享”，同时
                 # 仍可编辑该配置、添加多个模型，以及继续新增自己的提供商。
@@ -57,9 +72,14 @@ def apply_patches(app_root):
 
                 # 3. 定制 dsh-host-directory-picker-browse 飞牛共享目录
                 if 'dsh-host-directory-picker-browse' in p and f == 'index.js':
-                    code = code.replace('import fs from node:fs;\n', '')
-                    code = code.replace('import fs from "node:fs";\n', '')
-                    code = 'import fs from "node:fs";\n' + code
+                    # 上游 rc.8 起生成物以 `import fs from "node:fs";` 开头，
+                    # 两种引号形式都覆盖；若该行不存在则跳过（保持原文件）。
+                    if 'import fs from "node:fs";' in code:
+                        code = code.replace('import fs from "node:fs";\n', '')
+                        code = 'import fs from "node:fs";\n' + code
+                    elif 'import fs from node:fs;\n' in code:
+                        code = code.replace('import fs from node:fs;\n', 'import fs from "node:fs";\n')
+                        changed = True
 
                     fnos_block = '''function fnosTargetHome() {
 \ttry {
@@ -71,21 +91,27 @@ def apply_patches(app_root):
 \t\tconst home = fnosTargetHome();
 \t\t'''
 
+                    # 先把文件还原到上游形态，再重新注入，保证幂等（重复执行不叠加）：
+                    # 1) 摘掉所有 fnosTargetHome 函数定义；2) 若残留 `const home = fnosTargetHome();`
+                    # 把它还原为 `const home = homedir();`；3) 只在 `const home = homedir();`
+                    # 存在时替换成 fnos_block。若上游形态被破坏（一个 home 赋值都没有），
+                    # 放弃修改，保持原文件（build.sh 的 node --check 会兜底拦截）。
+                    target = 'const home = homedir();'
                     if 'function fnosTargetHome()' in code:
-                        f_pos = code.find('function fnosTargetHome()')
-                        next_pos = code.find('if (path !== void 0', f_pos)
-                        if next_pos != -1:
-                            code = code[:f_pos] + fnos_block + code[next_pos:]
-                            changed = True
-                    elif 'const home = homedir();' in code:
-                        code = code.replace('const home = homedir();', fnos_block)
+                        code = re.sub(r'function fnosTargetHome\(\) \{.*?\n\}\n', '', code, flags=re.S)
+                    if 'const home = fnosTargetHome();' in code:
+                        code = code.replace('const home = fnosTargetHome();', target)
+                    if target in code:
+                        # 只注入一次；残留的多余赋值（旧注入还原后与原文件叠加）一律清除
+                        code = code.replace(target, fnos_block, 1)
+                        code = code.replace(target, '')
                         changed = True
 
                 if changed:
                     with open(p, 'w', encoding='utf-8') as fp:
                         fp.write(code)
 
-    print("[✓] 全部补丁应用完成！")
+    print("[OK] 全部补丁应用完成！")
 
 if __name__ == '__main__':
     target_root = sys.argv[1] if len(sys.argv) > 1 else '.'

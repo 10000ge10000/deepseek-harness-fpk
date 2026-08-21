@@ -28,16 +28,62 @@ log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
 }
 
+# 按命令行特征找回存活实例（PID 文件丢失/失效时的自愈兜底）
+# pgrep 需排除自身，避免命中正在执行本脚本的 bash 进程
+runner_pids() {
+    pgrep -f "${TRIM_APPDEST}/bin/runner.js" 2>/dev/null | grep -vx "$$" | head -n 1
+}
+
+dsh_pids() {
+    pgrep -f "${TRIM_APPDEST}/node_modules/@deepseek-ai/dsh.*bin.js web" 2>/dev/null | grep -vx "$$" | head -n 1
+}
+
+instance_alive() {
+    local pid="$1"
+    [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null
+}
+
+# 端口 3080/3081 已被本应用实例占用时，找到对应的 runner 或 dsh 进程
+port_owner_pid() {
+    local owner
+    owner=$(netstat -tlnp 2>/dev/null | grep -E ':(3080|3081) ' | sed -n 's/.*[[:space:]]\([0-9]\+\)\/[A-Za-z0-9_+.-]*[[:space:]]*$/\1/p' | sort -un | head -n 1)
+    [ -n "${owner}" ] && echo "${owner}"
+}
+
+recover_running_instance() {
+    local pid
+    pid=$(runner_pids)
+    if instance_alive "${pid}"; then
+        printf "%s" "${pid}" > "${PID_FILE}"
+        log_msg "Recovered running instance PID ${pid} (PID file was missing/stale)"
+        return 0
+    fi
+    return 1
+}
+
 start_process() {
     log_msg "Starting ${APPNAME}..."
-    
-    # 检查是否已在运行
+
+    # 检查是否已在运行：优先读 PID 文件，丢失/失效时按命令行特征兜底找回
     if [ -f "${PID_FILE}" ]; then
         local old_pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
-        if [ -n "${old_pid}" ] && kill -0 "${old_pid}" 2>/dev/null; then
+        if instance_alive "${old_pid}"; then
             log_msg "${APPNAME} already running with PID ${old_pid}"
             return 0
         fi
+        rm -f "${PID_FILE}"
+    fi
+    if recover_running_instance; then
+        return 0
+    fi
+
+    # 启动前确认端口未被本应用实例占用（避免双实例 EADDRINUSE 误报失败）
+    local bound_pid
+    bound_pid=$(port_owner_pid)
+    if instance_alive "${bound_pid}"; then
+        log_msg "Port 3080/3081 held by PID ${bound_pid}, treating as running"
+        printf "%s" "${bound_pid}" > "${PID_FILE}"
+        return 0
     fi
 
     export PATH="${TRIM_APPDEST}/bin:$PATH"
@@ -86,10 +132,30 @@ stop_process() {
         fi
     fi
 
-    # 清理所有残留进程
-    pkill -9 -f "${TRIM_APPDEST}/bin/runner.js" 2>/dev/null || true
-    pkill -9 -f "@deepseek-ai/dsh" 2>/dev/null || true
-    pkill -9 -f "proxy.js" 2>/dev/null || true
+    # 按端口（3080/3081）清理持有者：appcenter 可能直启的 dsh 命令行不含特征串
+    local port_pids
+    port_pids=$(netstat -tlnp 2>/dev/null | grep -E ':(3080|3081) ' | sed -n 's/.*[[:space:]]\([0-9]\+\)\/[A-Za-z0-9_+.-]*[[:space:]]*$//p' | sort -un)
+    for pid in $(echo "${port_pids}"); do
+        [ -z "${pid}" ] && continue
+        [ "${pid}" = "$$" ] && continue
+        kill -9 "${pid}" 2>/dev/null || true
+    done
+
+    # 收集所有残留进程 PID（runner / dsh / proxy），排除自身与父 shell，先收集后杀
+    # 注意：不能用裸 pkill -f，会误杀命令行中带相同特征串的执行 shell
+    local cleanup_pids
+    cleanup_pids=$(pgrep -f "bin/runner.js" 2>/dev/null; pgrep -f "@deepseek-ai/dsh" 2>/dev/null; pgrep -f "proxy.js" 2>/dev/null; pgrep -f "bin.js web" 2>/dev/null)
+    for pid in $(echo "${cleanup_pids}" | sort -un); do
+        [ -z "${pid}" ] && continue
+        [ "${pid}" = "$$" ] && continue
+        kill -9 "${pid}" 2>/dev/null || true
+    done
+
+    # 兜底：清理后确认端口已释放，否则停止并不彻底
+    sleep 1
+    if ss -tln 2>/dev/null | grep -qE ':(3080|3081) '; then
+        log_msg "WARNING: port 3080/3081 still bound after stop"
+    fi
     rm -f "${PID_FILE}" 2>/dev/null || true
     log_msg "Stopped successfully"
     return 0
@@ -98,11 +164,14 @@ stop_process() {
 status_process() {
     if [ -f "${PID_FILE}" ]; then
         local pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
-        if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+        if instance_alive "${pid}"; then
             return 0
-        else
-            rm -f "${PID_FILE}"
         fi
+        rm -f "${PID_FILE}"
+    fi
+    # PID 文件丢失时按命令行特征兜底判断
+    if recover_running_instance; then
+        return 0
     fi
     return 3
 }

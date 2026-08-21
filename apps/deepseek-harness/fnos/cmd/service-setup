@@ -25,7 +25,17 @@ service_prestart() {
         fi
         rm -f "${PID_FILE}" 2>/dev/null || true
     fi
-    pkill -9 -f "runner.js" 2>/dev/null || true
+    # pkill -f 会匹配自身 shell（命令行含 "runner.js"），必须先收集 PID 再排除自身
+    for pid in $(pgrep -f "runner.js" 2>/dev/null); do
+        [ -n "${pid}" ] && [ "${pid}" != "$$" ] && kill -9 "${pid}" 2>/dev/null || true
+    done
+
+    # 1b. 按端口清理 3080/3081 持有者（appcenter 直启的 dsh 命令行可能不含 runner.js 特征）
+    for pid in $(netstat -tlnp 2>/dev/null | grep -E ':(3080|3081) ' | sed -n 's/.*[[:space:]]\([0-9]\+\)\/[A-Za-z0-9_+.-]*[[:space:]]*$//p' | sort -un); do
+        [ -z "${pid}" ] && continue
+        [ "${pid}" = "$$" ] && continue
+        kill -9 "${pid}" 2>/dev/null || true
+    done
 
     # 2. 如果向导跳过 (用户选以后配置)，确保创建空的向导变量文件，防止状态机空检查异常
     if [ ! -f "${TRIM_PKGVAR}/wizard_variables" ]; then
@@ -60,7 +70,9 @@ service_preuninst() {
         fi
         rm -f "${PID_FILE}" 2>/dev/null || true
     fi
-    pkill -9 -f "runner.js" 2>/dev/null || true
+    for pid in $(pgrep -f "runner.js" 2>/dev/null); do
+        [ -n "${pid}" ] && [ "${pid}" != "$$" ] && kill -9 "${pid}" 2>/dev/null || true
+    done
 }
 
 service_poststop() {
