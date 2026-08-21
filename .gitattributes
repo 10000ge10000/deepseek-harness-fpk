@@ -1,0 +1,25 @@
+# 统一行尾：shell/python/yaml 必须保持 LF，否则 Linux CI 与 fnOS 运行时
+# 会出现 $'\r': command not found。构建产物与图片按二进制处理。
+*.sh     text eol=lf
+*.py     text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.json   text eol=lf
+*.md     text eol=lf
+*.env    text eol=lf
+*.sc     text eol=lf
+*.fpk    binary
+*.tgz    binary
+*.png    binary
+*.jpg    binary
+*.ico    binary
+*.xz     binary
+
+# 无扩展名的 shell 脚本与配置（fnOS 生命周期框架、manifest、向导）
+shared/cmd/*             text eol=lf
+apps/*/fnos/cmd/*        text eol=lf
+apps/*/fnos/manifest     text eol=lf
+apps/*/fnos/wizard/*     text eol=lf
+apps/*/fnos/config/*     text eol=lf
+apps/*/fnos/*.sc         text eol=lf
+apps/*/fnos/ui/config    text eol=lf

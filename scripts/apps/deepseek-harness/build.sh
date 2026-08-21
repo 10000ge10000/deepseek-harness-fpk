@@ -1,17 +1,22 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Build DeepSeek Harness app.tgz for fnOS (.fpk)
-# Strategy: bundle Node.js runtime + pre-installed node_modules + proxy + ui assets (offline-ready, version-locked)
+# Strategy: bundle Node.js runtime + pre-installed node_modules + runner + ui assets (offline-ready, version-locked)
+# 仅支持 Linux/macOS 执行：本脚本会直接运行下载的 linux node 二进制做 npm install
 # Reference: apps/feigram from conversun/fnos-apps
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
-# 版本兜底值以 meta.env 为单一来源
+# 版本兜底与 Node 版本均以 meta.env 为单一来源
 DSH_FALLBACK_VERSION="${DSH_FALLBACK_VERSION:-$(sed -n 's/^DSH_FALLBACK_VERSION=//p' "${SCRIPT_DIR}/meta.env" 2>/dev/null | tr -d '[:space:]')}"
 if [ -z "${DSH_FALLBACK_VERSION}" ]; then
     DSH_FALLBACK_VERSION="0.1.0-rc.8"
+fi
+NODE_VERSION="${NODE_VERSION:-$(sed -n 's/^NODE_VERSION=//p' "${SCRIPT_DIR}/meta.env" 2>/dev/null | tr -d '[:space:]')}"
+if [ -z "${NODE_VERSION}" ]; then
+    NODE_VERSION="24.4.0"
 fi
 
 # 默认自动解析官方 npm 的 next / latest 版本，网络不可达时兜底为 meta.env 中的值
@@ -23,7 +28,6 @@ if [ -z "${VERSION:-}" ] || [ "${VERSION}" = "latest" ]; then
     VERSION="${RESOLVED_VER}"
 fi
 
-NODE_VERSION="${NODE_VERSION:-24.4.0}"
 TARBALL_ARCH="${TARBALL_ARCH:-amd64}"
 PNPM_VERSION="${PNPM_VERSION:-10.14.0}"
 OUTPUT_TGZ="${OUTPUT_TGZ:-${REPO_ROOT}/app_${TARBALL_ARCH}.tgz}"
@@ -91,13 +95,13 @@ echo "==> Bundling pnpm ${PNPM_VERSION} for DSH plugin management..."
 "${WORK_DIR}/node/bin/npm" install --global --prefix "${WORK_DIR}/app_root" "pnpm@${PNPM_VERSION}" --omit=dev --no-audit --no-fund
 test -x "${WORK_DIR}/app_root/bin/pnpm"
 
-# 复制 ui 目录和启动/反代脚本至 app_root (解压后位于 ${TRIM_APPDEST})
+# 复制 ui 目录和 runner 脚本至 app_root (解压后位于 ${TRIM_APPDEST})
 if [ -d "${REPO_ROOT}/apps/deepseek-harness/fnos/ui" ]; then
     echo "==> Bundling desktop UI config..."
     cp -r "${REPO_ROOT}/apps/deepseek-harness/fnos/ui" "${WORK_DIR}/app_root/ui"
 fi
 if [ -d "${REPO_ROOT}/apps/deepseek-harness/fnos/bin" ]; then
-    echo "==> Bundling start & proxy scripts..."
+    echo "==> Bundling runner script..."
     cp -r "${REPO_ROOT}/apps/deepseek-harness/fnos/bin/." "${WORK_DIR}/app_root/bin/"
     chmod +x "${WORK_DIR}/app_root/bin/"* 2>/dev/null || true
 fi
@@ -108,6 +112,11 @@ python3 "${SCRIPT_DIR}/patch.py" "${WORK_DIR}/app_root"
 # 5. 在打包前校验所有 DeepSeek 模块的 JavaScript 语法，避免把无法启动的包交给 fnOS。
 echo "==> Checking patched DeepSeek JavaScript syntax..."
 SYNTAX_ERRORS=0
+# 目录缺失（npm install 布局异常）必须显式失败，否则 find 零迭代会被误判为校验通过
+if [ ! -d "${WORK_DIR}/app_root/node_modules/@deepseek-ai" ]; then
+    echo "Refusing to package: ${WORK_DIR}/app_root/node_modules/@deepseek-ai 不存在，npm install 布局异常" >&2
+    exit 1
+fi
 while IFS= read -r JS_FILE; do
     if ! "${WORK_DIR}/node/bin/node" --check "${JS_FILE}" >/dev/null 2>&1; then
         echo "Syntax check failed: ${JS_FILE}" >&2

@@ -29,13 +29,15 @@ case "$PLATFORM" in
         ;;
 esac
 
-if [ ! -f "$TAR_FILE" ] && [ -f "${REPO_ROOT}/app.tgz" ]; then
-    TAR_FILE="${REPO_ROOT}/app.tgz"
-fi
-
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+
+if [ ! -f "$TAR_FILE" ] && [ -f "${REPO_ROOT}/app.tgz" ]; then
+    # 回退到不带架构后缀的 app.tgz 有架构错位风险（它可能是另一架构最后一次构建的产物）
+    echo -e "${RED}[WARN]${NC} 未找到 ${TAR_FILE##*/}，回退到 app.tgz——请确认其架构与目标平台一致！"
+    TAR_FILE="${REPO_ROOT}/app.tgz"
+fi
 
 [ -d "$APP_DIR/fnos" ] || error "App directory not found: $APP_DIR/fnos"
 [ -f "$TAR_FILE" ] || error "Target archive not found: $TAR_FILE — run build.sh first"
@@ -47,7 +49,7 @@ done
 [ -d "$APP_DIR/fnos/ui" ] || error "Missing ui/ directory"
 
 # Read appname
-APPNAME=$(grep "^appname" "$APP_DIR/fnos/manifest" | awk -F'=' '{print $2}' | tr -d ' ')
+APPNAME=$(grep "^appname[[:space:]]*=" "$APP_DIR/fnos/manifest" | awk -F'=' '{print $2}' | tr -d ' ')
 [ -n "$APPNAME" ] || error "Cannot read appname from manifest"
 
 info "Building fpk for: $APPNAME (platform: $NORM_PLATFORM)"
@@ -55,6 +57,8 @@ info "Building fpk for: $APPNAME (platform: $NORM_PLATFORM)"
 CHECKSUM=$(md5sum "$TAR_FILE" | cut -d' ' -f1)
 
 WORK_DIR=$(mktemp -d)
+# 中途失败也要清理临时目录（此前只有成功路径清理，set -e 失败会泄漏 /tmp 目录）
+trap 'rm -rf "$WORK_DIR"' EXIT
 PKG_DIR="$WORK_DIR/package"
 mkdir -p "$PKG_DIR/cmd"
 
@@ -127,11 +131,11 @@ sed -i.tmp "s/^checksum.*/checksum        = ${CHECKSUM}/" "$PKG_DIR/manifest"
 rm -f "$PKG_DIR/manifest.tmp"
 
 # Output name
-MANIFEST_VERSION=$(grep "^version" "$PKG_DIR/manifest" | awk -F'=' '{print $2}' | tr -d ' ')
-MANIFEST_PLATFORM=$(grep "^platform" "$PKG_DIR/manifest" | awk -F'=' '{print $2}' | tr -d ' ')
+MANIFEST_VERSION=$(grep "^version[[:space:]]*=" "$PKG_DIR/manifest" | awk -F'=' '{print $2}' | tr -d ' ')
+MANIFEST_PLATFORM=$(grep "^platform[[:space:]]*=" "$PKG_DIR/manifest" | awk -F'=' '{print $2}' | tr -d ' ')
 FPK_NAME="${APPNAME}_${MANIFEST_VERSION}_${MANIFEST_PLATFORM:-x86}.fpk"
 
-# 11. Create fpk
+# 12. Create fpk
 cd "$PKG_DIR"
 [ -f "app.tgz" ] || error "app.tgz missing"
 [ -f "manifest" ] || error "manifest missing"
@@ -143,5 +147,6 @@ tar --owner=0 --group=0 --numeric-owner -czf "$REPO_ROOT/$FPK_NAME" *
 cd "$REPO_ROOT"
 
 rm -rf "$WORK_DIR"
+trap - EXIT
 info "Built: $FPK_NAME ($(du -h "$REPO_ROOT/$FPK_NAME" | cut -f1))"
 echo "$FPK_NAME"

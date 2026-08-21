@@ -29,17 +29,28 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 concurrency:
   group: deepseek-harness-fpk-release
   cancel-in-progress: false
 
 jobs:
+  test:
+    name: Lint and Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Run Test Suite
+        run: bash tests/run-tests.sh
+
   resolve_version:
     name: Resolve DSH Version and Release Policy
+    needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       target_ver: ${{ steps.resolve.outputs.target_ver }}
       dsh_ver: ${{ steps.resolve.outputs.dsh_ver }}
@@ -65,99 +76,7 @@ jobs:
           DSH_VERSION_INPUT: ${{ inputs.dsh_version }}
           FORCE_REBUILD: ${{ inputs.force_rebuild }}
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-
-          is_npm_version_ready() {
-            local ver="$1"
-            [ -z "$ver" ] && return 1
-            if npm view "@deepseek-ai/dsh@${ver}" version >/dev/null 2>&1; then
-              return 0
-            fi
-            return 1
-          }
-
-          APP_VER=$(grep "^version" apps/deepseek-harness/fnos/manifest | awk -F'=' '{print $2}' | tr -d ' ')
-
-          NPM_NEXT_VER=$(npm view @deepseek-ai/dsh dist-tags.next 2>/dev/null || true)
-          NPM_LATEST_VER=$(npm view @deepseek-ai/dsh dist-tags.latest 2>/dev/null || true)
-
-          # 版本兜底值以 meta.env 为单一来源
-          DSH_FALLBACK_VERSION=$(sed -n 's/^DSH_FALLBACK_VERSION=//p' scripts/apps/deepseek-harness/meta.env | tr -d '[:space:]')
-          [ -z "$DSH_FALLBACK_VERSION" ] && DSH_FALLBACK_VERSION="0.1.0-rc.8"
-
-          LATEST_NPM_VER=""
-          if is_npm_version_ready "$NPM_NEXT_VER"; then
-            LATEST_NPM_VER="$NPM_NEXT_VER"
-          elif is_npm_version_ready "$NPM_LATEST_VER"; then
-            LATEST_NPM_VER="$NPM_LATEST_VER"
-          else
-            LATEST_NPM_VER="${APP_VER:-$DSH_FALLBACK_VERSION}"
-          fi
-
-          if [ "$EVENT_NAME" = "schedule" ]; then
-            # 定时任务以 npm 官方最新就绪版本为准，内核与 FPK 版本严格对齐
-            TARGET_VER="$LATEST_NPM_VER"
-            DSH_VER="$LATEST_NPM_VER"
-          elif [ -n "$VERSION_INPUT" ]; then
-            # 用户显式指定构建版本
-            TARGET_VER="$VERSION_INPUT"
-            DSH_VER="${DSH_VERSION_INPUT:-$VERSION_INPUT}"
-          elif [ -n "$DSH_VERSION_INPUT" ]; then
-            TARGET_VER="$DSH_VERSION_INPUT"
-            DSH_VER="$DSH_VERSION_INPUT"
-          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            # Tag 推送触发：版本严格与 Tag 对应，若 npm 存在对应包则优先使用该包
-            TAG_VER="${GITHUB_REF#refs/tags/v}"
-            TARGET_VER="$TAG_VER"
-            if is_npm_version_ready "$TAG_VER"; then
-              DSH_VER="$TAG_VER"
-            else
-              DSH_VER="${DSH_VERSION_INPUT:-$LATEST_NPM_VER}"
-            fi
-          else
-            # 自动推断：默认以官方最新可用版本为准，避免滞后于本地旧 manifest
-            TARGET_VER="${LATEST_NPM_VER:-$APP_VER}"
-            DSH_VER="${LATEST_NPM_VER:-$APP_VER}"
-          fi
-
-          if [ -z "$TARGET_VER" ] || [ -z "$DSH_VER" ]; then
-            echo "无法确定 FPK 或 DSH 构建版本" >&2
-            exit 1
-          fi
-
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            RELEASE_TAG="$REF_NAME"
-          else
-            RELEASE_TAG="v${TARGET_VER}"
-          fi
-
-          SHOULD_BUILD=true
-          PUBLISH_RELEASE=false
-          if [ "$EVENT_NAME" = "schedule" ]; then
-            if [ "$TARGET_VER" = "${APP_VER:-}" ]; then
-              SHOULD_BUILD=false
-              echo "上游 DSH 仍为当前打包版本 ${TARGET_VER}，跳过构建。"
-            elif gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              SHOULD_BUILD=false
-              echo "上游版本 ${TARGET_VER} 已有 Release ${RELEASE_TAG}，跳过重复构建。"
-            else
-              PUBLISH_RELEASE=true
-            fi
-          elif [ "$EVENT_NAME" = "workflow_dispatch" ] || [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            PUBLISH_RELEASE=true
-          fi
-
-          if [ "$FORCE_REBUILD" = "true" ]; then
-            SHOULD_BUILD=true
-          fi
-
-          echo "target_ver=${TARGET_VER}" >> "$GITHUB_OUTPUT"
-          echo "dsh_ver=${DSH_VER}" >> "$GITHUB_OUTPUT"
-          echo "tag_name=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
-          echo "should_build=${SHOULD_BUILD}" >> "$GITHUB_OUTPUT"
-          echo "publish_release=${PUBLISH_RELEASE}" >> "$GITHUB_OUTPUT"
-          echo "DSH=${DSH_VER}; FPK=${TARGET_VER}; Release=${RELEASE_TAG}; build=${SHOULD_BUILD}; publish=${PUBLISH_RELEASE}"
+        run: bash scripts/ci/resolve-version.sh
 
   build_arm:
     name: Build ARM64 FPK Package
@@ -166,17 +85,19 @@ jobs:
     # DSH 依赖 sharp、node-pty、koffi 等原生模块；在 x86 QEMU 中执行 npm install
     # 会长时间卡住。使用 GitHub 托管的原生 ARM64 Runner 生成正确的二进制依赖。
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Build ARM (arm64) Package
-        run: |
-          chmod +x scripts/apps/deepseek-harness/build.sh build-fpk.sh
-          echo "==> 在原生 ARM64 Runner 构建应用包..."
-          VERSION="${{ needs.resolve_version.outputs.dsh_ver }}" TARBALL_ARCH=arm64 bash scripts/apps/deepseek-harness/build.sh
-          bash build-fpk.sh "${{ needs.resolve_version.outputs.target_ver }}" arm
+        env:
+          DSH_VERSION: ${{ needs.resolve_version.outputs.dsh_ver }}
+          TARGET_VERSION: ${{ needs.resolve_version.outputs.target_ver }}
+          TARBALL_ARCH: arm64
+          FPK_PLATFORM: arm
+        run: bash scripts/ci/build-package.sh
 
       - name: Upload ARM Package
         uses: actions/upload-artifact@v4
@@ -190,6 +111,7 @@ jobs:
     needs: [resolve_version, build_arm]
     if: needs.resolve_version.outputs.should_build == 'true' && needs.build_arm.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     steps:
       - name: Checkout Code
@@ -201,11 +123,12 @@ jobs:
           node-version: 22
 
       - name: Build x86 (amd64) Package
-        run: |
-          chmod +x scripts/apps/deepseek-harness/build.sh build-fpk.sh
-          echo "==> 构建 x86 架构应用包..."
-          VERSION="${{ needs.resolve_version.outputs.dsh_ver }}" TARBALL_ARCH=amd64 bash scripts/apps/deepseek-harness/build.sh
-          bash build-fpk.sh "${{ needs.resolve_version.outputs.target_ver }}" x86
+        env:
+          DSH_VERSION: ${{ needs.resolve_version.outputs.dsh_ver }}
+          TARGET_VERSION: ${{ needs.resolve_version.outputs.target_ver }}
+          TARBALL_ARCH: amd64
+          FPK_PLATFORM: x86
+        run: bash scripts/ci/build-package.sh
 
       - name: Download ARM Package
         uses: actions/download-artifact@v4
@@ -218,16 +141,14 @@ jobs:
         run: |
           echo "当前已生成的安装包产物:"
           ls -lh *.fpk
-          X86_FPK=$(ls *_x86.fpk 2>/dev/null | head -n 1 || echo "")
-          ARM_FPK=$(ls *_arm.fpk 2>/dev/null | head -n 1 || echo "")
-          echo "x86_fpk=${X86_FPK}" >> $GITHUB_OUTPUT
-          echo "arm_fpk=${ARM_FPK}" >> $GITHUB_OUTPUT
+          bash scripts/ci/list-artifacts.sh
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: deepseek-harness-fpk-all
           path: "*.fpk"
+          if-no-files-found: error
 
       - name: Create GitHub Release
         id: create_release
@@ -244,101 +165,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate fnOS AppStore Index & Webpage
-        if: needs.resolve_version.outputs.publish_release == 'true' || github.ref == 'refs/heads/main'
+        if: needs.resolve_version.outputs.publish_release == 'true'
+        env:
+          TARGET_VER: ${{ needs.resolve_version.outputs.target_ver }}
+          TAG_NAME: ${{ needs.resolve_version.outputs.tag_name }}
+          X86_FPK: ${{ steps.list_fpk.outputs.x86_fpk }}
+          ARM_FPK: ${{ steps.list_fpk.outputs.arm_fpk }}
         run: |
-          mkdir -p public
-          python3 -c "
-          import json, os
-
-          ver = '${{ needs.resolve_version.outputs.target_ver }}'
-          tag_name = '${{ needs.resolve_version.outputs.tag_name }}'
-          x86_fpk = '${{ steps.list_fpk.outputs.x86_fpk }}'
-          arm_fpk = '${{ steps.list_fpk.outputs.arm_fpk }}'
-
-          app_x86 = {
-              'name': 'DeepSeekHarness',
-              'title': 'DeepSeek Harness (一万AI分享定制版 - x86)',
-              'version': ver,
-              'platform': 'x86',
-              'author': '一万AI分享',
-              'description': 'DeepSeek 官方 AI 开发助手与桌面工作台 (x86_64 架构)。预制一万AI分享提供商，模型和 API 均可编辑，文件管理实时互通。',
-              'icon': 'https://raw.githubusercontent.com/10000ge10000/deepseek-harness-fpk/main/apps/deepseek-harness/fnos/ICON_256.PNG',
-              'download_url': f'https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/{tag_name}/{x86_fpk}',
-              'changelog': '一键开箱即用，支持局域网非安全上下文 Polyfill，飞牛文件管理双向打通。'
-          }
-
-          app_arm = {
-              'name': 'DeepSeekHarness',
-              'title': 'DeepSeek Harness (一万AI分享定制版 - ARM)',
-              'version': ver,
-              'platform': 'arm',
-              'author': '一万AI分享',
-              'description': 'DeepSeek 官方 AI 开发助手与桌面工作台 (ARM64 / aarch64 架构)。预制一万AI分享提供商，模型和 API 均可编辑，文件管理实时互通。',
-              'icon': 'https://raw.githubusercontent.com/10000ge10000/deepseek-harness-fpk/main/apps/deepseek-harness/fnos/ICON_256.PNG',
-              'download_url': f'https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/{tag_name}/{arm_fpk}',
-              'changelog': '一键开箱即用，支持局域网非安全上下文 Polyfill，飞牛文件管理双向打通。'
-          }
-
-          store_data = {
-              'name': '一万AI分享应用源',
-              'description': '一万AI分享 飞牛私有云 NAS 第三方应用源 (支持 x86 与 ARM64 双架构)',
-              'url': 'https://10000ge10000.github.io/deepseek-harness-fpk/',
-              'apps': [app_x86, app_arm]
-          }
-
-          with open('public/appstore.json', 'w', encoding='utf-8') as f:
-              json.dump(store_data, f, ensure_ascii=False, indent=2)
-
-          with open('public/manifests.json', 'w', encoding='utf-8') as f:
-              json.dump([app_x86, app_arm], f, ensure_ascii=False, indent=2)
-
-          with open('public/index.html', 'w', encoding='utf-8') as f:
-              f.write(f'''<!DOCTYPE html>
-          <html lang=\"zh-CN\">
-          <head>
-              <meta charset=\"utf-8\">
-              <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
-              <title>一万AI分享 · 飞牛 NAS 专属应用发布站 (x86 & ARM)</title>
-              <style>
-                  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 860px; margin: 40px auto; padding: 0 20px; color: #24292e; line-height: 1.6; background-color: #f6f8fa; }}
-                  .container {{ background: #fff; border: 1px solid #e1e4e8; border-radius: 12px; padding: 32px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }}
-                  h1 {{ color: #0366d6; margin-top: 0; }}
-                  .card {{ background: #fafbfc; border: 1px solid #e1e4e8; border-radius: 8px; padding: 20px; margin: 20px 0; }}
-                  .badge {{ background: #28a745; color: white; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; vertical-align: middle; }}
-                  .badge-arch {{ background: #6f42c1; color: white; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }}
-                  code {{ background: #eef1f4; padding: 4px 8px; border-radius: 6px; font-family: SFMono-Regular, Consolas, monospace; font-size: 14px; word-break: break-all; color: #d73a49; }}
-                  .btn-group {{ margin-top: 15px; display: flex; gap: 12px; flex-wrap: wrap; }}
-                  a.btn {{ display: inline-block; background: #0366d6; color: white; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; }}
-                  a.btn:hover {{ background: #0256b9; }}
-                  a.btn-arm {{ background: #6f42c1; }}
-                  a.btn-arm:hover {{ background: #5a32a3; }}
-              </style>
-          </head>
-          <body>
-              <div class=\"container\">
-                  <h1>🚀 一万AI分享 · 飞牛 NAS 专属应用发布站</h1>
-                  <p>欢迎使用一万AI分享专属维护的飞牛私有云应用。现已全量支持 <strong>x86_64</strong> 与 <strong>ARM64</strong> 双架构！</p>
-
-                  <div class=\"card\">
-                      <h3>🤖 DeepSeek Harness <span class=\"badge\">{ver}</span></h3>
-                      <p>DeepSeek 官方 AI 开发助手与桌面工作台（一万AI分享定制版）。</p>
-                      <ul>
-                          <li><strong>内置公益端点</strong>：<code>https://api.910501.xyz/v1</code></li>
-                          <li><strong>预制提供商</strong>：一万AI分享（支持多个模型和自定义 API）</li>
-                          <li><strong>文件打通</strong>：实时互通至飞牛桌面【文件管理】&rarr;【应用文件】</li>
-                      </ul>
-                      <div class=\"btn-group\">
-                          <a class=\"btn\" href=\"{app_x86['download_url']}\">📥 下载 x86 安装包 (.fpk)</a>
-                          <a class=\"btn btn-arm\" href=\"{app_arm['download_url']}\">📥 下载 ARM64 安装包 (.fpk)</a>
-                      </div>
-                  </div>
-              </div>
-          </body>
-          </html>''')
-          "
+          python3 scripts/ci/generate-appstore.py \
+            --version "$TARGET_VER" --tag "$TAG_NAME" \
+            --x86-fpk "$X86_FPK" --arm-fpk "$ARM_FPK" \
+            --out-dir public
 
       - name: Deploy to GitHub Pages
-        if: needs.resolve_version.outputs.publish_release == 'true' || github.ref == 'refs/heads/main'
+        if: needs.resolve_version.outputs.publish_release == 'true'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
