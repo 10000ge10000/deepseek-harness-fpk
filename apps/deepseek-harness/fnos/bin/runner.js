@@ -211,6 +211,9 @@ const POLYFILL_SCRIPT = `<script>
 
   try {
     var g = typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : typeof self !== 'undefined' ? self : this;
+    if (typeof window !== 'undefined') {
+      window.__DSH_LOCAL_APP__ = true;
+    }
     
     // 1. AbortSignal.any Polyfill (解决华为平板/安卓老旧浏览器/微信WebView "AbortSignal.any is not a function")
     if (typeof g.AbortSignal !== 'undefined' && !g.AbortSignal.any) {

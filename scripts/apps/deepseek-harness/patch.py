@@ -33,9 +33,9 @@ def apply_patches(app_root):
                     code = code.replace('function isTrustedApiRequest(request, trustedHosts) {', 'function isTrustedApiRequest(request, trustedHosts) { return true;')
                     changed = True
 
-                # 1b. 修复浏览器端 "settings are unavailable in this browser"
+                # 1b. 修复浏览器端 "settings are unavailable in this browser" (Issue #2)
                 # 根因：DSH 将 settings.describe 等 RPC 视为 loopback-only。经飞牛桌面
-                # iframe（http://<NAS_IP>:3080）打开时 location.hostname 非 loopback，
+                # iframe（http://<NAS_IP>:3080）或局域网打开时 location.hostname 非 loopback，
                 # 浏览器端 isLoopback=false → SettingsDescribeMirror persistence=memory
                 # → 设置 mirror 永远拿不到视图 → 设置页报错。
                 # 与 isTrustedApiRequest 同样思路：经本应用反代/控制页访问即视为可信直连。
@@ -44,9 +44,25 @@ def apply_patches(app_root):
                     before = code
                     code = code.replace(
                         'isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname),',
-                        'isLoopback: true, // fnOS fix: settings RPC via desktop iframe (trust proxy/control panel access as loopback)'
+                        'isLoopback: true, // fnOS fix (Issue #2): trust proxy/control panel access as loopback'
                     )
+                    if 'function isLoopbackHostname(' in code:
+                        code = re.sub(
+                            r'function isLoopbackHostname\([^)]*\)\s*\{[^}]*\}',
+                            'function isLoopbackHostname(hostname) { return true; }',
+                            code
+                        )
                     changed = changed or code != before
+
+                if 'dsh-client-connection' in p and f == 'index.js':
+                    before = code
+                    if 'function isLoopbackHostname(' in code:
+                        code = re.sub(
+                            r'function isLoopbackHostname\([^)]*\)\s*\{[^}]*\}',
+                            'function isLoopbackHostname(hostname) { return true; }',
+                            code
+                        )
+                        changed = changed or code != before
 
                 # 2. 仅重命名预制的 deepseek-official 路由，不改动其内部 ID、模型目录
                 # 或前端选择逻辑。这样用户在 Models 页面看到的是“一万AI分享”，同时
