@@ -6,23 +6,23 @@
     {
       "name": "DeepSeekHarness",
       "title": "DeepSeek Harness (一万AI分享定制版 - x86)",
-      "version": "0.1.0-rc.8",
+      "version": "0.1.1-rc.2",
       "platform": "x86",
       "author": "一万AI分享",
       "description": "DeepSeek 官方 AI 开发助手与桌面工作台 (x86_64 架构)。预制一万AI分享提供商，模型和 API 均可编辑，文件管理实时互通。",
       "icon": "https://raw.githubusercontent.com/10000ge10000/deepseek-harness-fpk/main/apps/deepseek-harness/fnos/ICON_256.PNG",
-      "download_url": "https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/v0.1.0-rc.8/deepseek-harness_0.1.0-rc.8_x86.fpk",
+      "download_url": "https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/v0.1.1-rc.2/deepseek-harness_0.1.1-rc.2_x86.fpk",
       "changelog": "一键开箱即用，支持局域网非安全上下文 Polyfill，飞牛文件管理双向打通。"
     },
     {
       "name": "DeepSeekHarness",
       "title": "DeepSeek Harness (一万AI分享定制版 - ARM)",
-      "version": "0.1.0-rc.8",
+      "version": "0.1.1-rc.2",
       "platform": "arm",
       "author": "一万AI分享",
       "description": "DeepSeek 官方 AI 开发助手与桌面工作台 (ARM64 / aarch64 架构)。预制一万AI分享提供商，模型和 API 均可编辑，文件管理实时互通。",
       "icon": "https://raw.githubusercontent.com/10000ge10000/deepseek-harness-fpk/main/apps/deepseek-harness/fnos/ICON_256.PNG",
-      "download_url": "https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/v0.1.0-rc.8/deepseek-harness_0.1.0-rc.8_arm.fpk",
+      "download_url": "https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/v0.1.1-rc.2/deepseek-harness_0.1.1-rc.2_arm.fpk",
       "changelog": "一键开箱即用，支持局域网非安全上下文 Polyfill，飞牛文件管理双向打通。"
     }
   ]
