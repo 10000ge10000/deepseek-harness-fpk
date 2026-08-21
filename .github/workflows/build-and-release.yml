@@ -92,22 +92,29 @@ jobs:
           fi
 
           if [ "$EVENT_NAME" = "schedule" ]; then
-            # 定时任务以 npm 官方最新就绪版本为准
+            # 定时任务以 npm 官方最新就绪版本为准，内核与 FPK 版本严格对齐
             TARGET_VER="$LATEST_NPM_VER"
             DSH_VER="$LATEST_NPM_VER"
           elif [ -n "$VERSION_INPUT" ]; then
+            # 用户显式指定构建版本
             TARGET_VER="$VERSION_INPUT"
-            DSH_VER="${DSH_VERSION_INPUT:-$LATEST_NPM_VER}"
+            DSH_VER="${DSH_VERSION_INPUT:-$VERSION_INPUT}"
           elif [ -n "$DSH_VERSION_INPUT" ]; then
             TARGET_VER="$DSH_VERSION_INPUT"
             DSH_VER="$DSH_VERSION_INPUT"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            TARGET_VER="${GITHUB_REF#refs/tags/v}"
-            # 自动优先拉取官方 latest/next npm 包进行封装打包
-            DSH_VER="${DSH_VERSION_INPUT:-$LATEST_NPM_VER}"
+            # Tag 推送触发：版本严格与 Tag 对应，若 npm 存在对应包则优先使用该包
+            TAG_VER="${GITHUB_REF#refs/tags/v}"
+            TARGET_VER="$TAG_VER"
+            if is_npm_version_ready "$TAG_VER"; then
+              DSH_VER="$TAG_VER"
+            else
+              DSH_VER="${DSH_VERSION_INPUT:-$LATEST_NPM_VER}"
+            fi
           else
-            TARGET_VER="$APP_VER"
-            DSH_VER="$LATEST_NPM_VER"
+            # 自动推断：默认以官方最新可用版本为准，避免滞后于本地旧 manifest
+            TARGET_VER="${LATEST_NPM_VER:-$APP_VER}"
+            DSH_VER="${LATEST_NPM_VER:-$APP_VER}"
           fi
 
           if [ -z "$TARGET_VER" ] || [ -z "$DSH_VER" ]; then
