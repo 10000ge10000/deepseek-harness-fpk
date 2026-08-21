@@ -10,8 +10,8 @@
 | :--- | :--- |
 | **应用名称 (appname)** | `DeepSeekHarness` |
 | **应用中文名** | `DeepSeek Harness` (一万AI分享定制版) |
-| **版本号 (version)** | `0.1.0-rc.6.1` |
-| **适用架构 (platform)** | `x86_64` (amd64) |
+| **版本号 (version)** | 以 [`apps/deepseek-harness/fnos/manifest`](apps/deepseek-harness/fnos/manifest) 中的 `version` 为准（提报时同步更新） |
+| **适用架构 (platform)** | `x86_64` (amd64) 与 `ARM64` (aarch64) 双架构 |
 | **应用分类** | AI 工具 / 开发运维 |
 | **开发者/发布者** | `一万AI分享` |
 | **官方网站** | `https://api.910501.xyz` |
@@ -23,12 +23,12 @@
 
 ## 📁 提报物料与清单
 
-- **应用描述文件**：[`apps/deepseek-harness/fnos/manifest`](file:///apps/deepseek-harness/fnos/manifest)
-- **权限与资源声明**：[`apps/deepseek-harness/fnos/config/privilege`](file:///apps/deepseek-harness/fnos/config/privilege) 和 [`resource`](file:///apps/deepseek-harness/fnos/config/resource)
+- **应用描述文件**：[`apps/deepseek-harness/fnos/manifest`](apps/deepseek-harness/fnos/manifest)
+- **权限与资源声明**：[`apps/deepseek-harness/fnos/config/privilege`](apps/deepseek-harness/fnos/config/privilege) 和 [`resource`](apps/deepseek-harness/fnos/config/resource)
 - **图形界面与图标**：
-  - 64x64 图标：[`apps/deepseek-harness/fnos/ICON.PNG`](file:///apps/deepseek-harness/fnos/ICON.PNG)
-  - 256x256 高清图标：[`apps/deepseek-harness/fnos/ICON_256.PNG`](file:///apps/deepseek-harness/fnos/ICON_256.PNG)
-- **安装向导文件**：[`apps/deepseek-harness/fnos/wizard/install`](file:///apps/deepseek-harness/fnos/wizard/install)
+  - 64x64 图标：[`apps/deepseek-harness/fnos/ICON.PNG`](apps/deepseek-harness/fnos/ICON.PNG)
+  - 256x256 高清图标：[`apps/deepseek-harness/fnos/ICON_256.PNG`](apps/deepseek-harness/fnos/ICON_256.PNG)
+- **安装向导文件**：[`apps/deepseek-harness/fnos/wizard/install`](apps/deepseek-harness/fnos/wizard/install)
 - **完整安装包**：[GitHub Releases 下载链接](https://github.com/10000ge10000/deepseek-harness-fpk/releases/latest)
 
 ---

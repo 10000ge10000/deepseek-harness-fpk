@@ -66,7 +66,6 @@ delete dshEnv.DEEPSEEK_API_KEY;
 delete dshEnv.OPENAI_API_KEY;
 delete dshEnv.DSH_DEFAULT_MODEL;
 delete dshEnv.DSH_MODEL;
-const customReasoning = 'high';
 
 // 端点只作为未配置 Models 页时的默认值。用户在 Models 页保存自己的 base URL
 // 后会立即优先使用设置层，无需重启。
@@ -300,7 +299,7 @@ const POLYFILL_SCRIPT = `<script>
 </script>`;
 
 console.log(`[Runner] 正在启动 DeepSeek Harness 后台服务 (127.0.0.1:${DSH_PORT})...`);
-console.log(`[Runner] 默认 API 端点: ${dshEnv.DEEPSEEK_BASE_URL}，Models 页面可覆盖；默认推理强度: ${customReasoning}`);
+console.log(`[Runner] 默认 API 端点: ${dshEnv.DEEPSEEK_BASE_URL}，Models 页面可覆盖`);
 if (seededCredential) console.log('[Runner] 已将向导 API Key 初始化为可编辑凭据');
 if (migratedModel) console.log('[Runner] 已迁移旧的一万AI分享默认模型配置');
 if (contextLimitInjected) console.log('[Runner] 已为内置公益站点模型配置 200k 上下文上限保护 (支持自动静默压缩)');

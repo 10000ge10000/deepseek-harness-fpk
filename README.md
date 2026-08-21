@@ -36,6 +36,18 @@
 
 ---
 
+## 🛠 开发与测试
+
+- **测试套件**（零依赖，本地与 CI 通用）：`bash tests/run-tests.sh`
+- **构建安装包**（需 Linux/macOS，会下载 Node 运行时并执行 npm install）：
+  ```bash
+  VERSION=<DSH版本> TARBALL_ARCH=amd64 bash scripts/apps/deepseek-harness/build.sh
+  bash build-fpk.sh <FPK版本> x86
+  ```
+- **CI 脚本**位于 `scripts/ci/`，由 `.github/workflows/build-and-release.yml` 调用；版本兜底值等构建元数据统一在 `scripts/apps/deepseek-harness/meta.env` 维护。
+
+---
+
 ## 📄 开源许可
 
 本项目遵循 MIT 开源许可证。
