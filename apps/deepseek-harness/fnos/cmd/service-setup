@@ -56,7 +56,7 @@ kill_port_owners() {
 service_prestart() {
     # 1. 启动前强制清理可能占用端口的残留进程，防止 EADDRINUSE 报错
     kill_recorded_pid
-    kill_pattern "runner.js"
+    kill_pattern "${APP_DIR}/bin/runner\.js"
 
     # 1b. 按端口清理 3080/3081 持有者
     kill_port_owners
@@ -67,14 +67,30 @@ service_prestart() {
     fi
 
     # 3. 确保存储和配置目录存在且具备写权限
-    mkdir -p "${TRIM_PKGVAR}/config" "${TRIM_PKGVAR}/data" 2>/dev/null || true
+    mkdir -p "${TRIM_PKGVAR}/config" 2>/dev/null || true
 
     # 4. 确保飞牛共享目录打通
     SHARE_WORKSPACE="/vol1/@appshare/DeepSeekHarness"
     if [ -d "/vol1" ]; then
         mkdir -p "${SHARE_WORKSPACE}/workspace" "${SHARE_WORKSPACE}/data" 2>/dev/null || true
-        chmod -R 777 "${SHARE_WORKSPACE}" 2>/dev/null || true
-        ln -sfn "${SHARE_WORKSPACE}" "${TRIM_PKGVAR}/data" 2>/dev/null || true
+        # 权限与 config/privilege（run-as: package）和 config/resource（rw: 专用用户）
+        # 声明对齐：owner 读写执行、其他人无权限。绝不能 chmod -R 777——那会把
+        # .dsh/.credentials.yaml（API Key）变成全局可读，新版 dsh 也会因权限过宽拒启。
+        chown -R deepseek-harness:deepseek-harness "${SHARE_WORKSPACE}" 2>/dev/null || true
+        chmod -R u+rwX,go-rwx "${SHARE_WORKSPACE}" 2>/dev/null || true
+        # 凭据目录显式收紧（历史版本可能放宽过）
+        chmod 700 "${SHARE_WORKSPACE}/.dsh" 2>/dev/null || true
+        chmod 600 "${SHARE_WORKSPACE}/.dsh/.credentials.yaml" 2>/dev/null || true
+        # data 若已是符号链接则直接刷新；真目录仅在为空时替换为链接，非空则保留并跳过
+        if [ -L "${TRIM_PKGVAR}/data" ]; then
+            ln -sfn "${SHARE_WORKSPACE}" "${TRIM_PKGVAR}/data" 2>/dev/null || true
+        elif [ -d "${TRIM_PKGVAR}/data" ]; then
+            if rmdir "${TRIM_PKGVAR}/data" 2>/dev/null; then
+                ln -sfn "${SHARE_WORKSPACE}" "${TRIM_PKGVAR}/data" 2>/dev/null || true
+            fi
+        else
+            ln -sfn "${SHARE_WORKSPACE}" "${TRIM_PKGVAR}/data" 2>/dev/null || true
+        fi
     fi
 }
 
@@ -88,7 +104,7 @@ service_postupgrade() {
 
 service_preuninst() {
     kill_recorded_pid
-    kill_pattern "runner.js"
+    kill_pattern "${APP_DIR}/bin/runner\.js"
 }
 
 service_poststop() {

@@ -128,10 +128,14 @@ echo "service_postconfig"
 
 check_docker()
 {
-	FILE_PATH="${TRIM_APPDEST}/app/docker-compose.yaml"
+	# 兼容 app/ 与 docker/ 两种放置位置（与 main 的 log 分支保持一致）
+	FILE_PATH="${TRIM_APPDEST}/docker/docker-compose.yaml"
+	if [ ! -f "$FILE_PATH" ]; then
+		FILE_PATH="${TRIM_APPDEST}/app/docker-compose.yaml"
+	fi
 	if [ -f "$FILE_PATH" ]; then
-		DOCKER_NAME=$(cat $FILE_PATH | grep "container_name" | awk -F ':' '{print $2}' | xargs)
-		echo "DOCKER_NAME is set to: $DOCKER_NAME"
+		DOCKER_NAME=$(grep "container_name" "$FILE_PATH" | awk -F ':' '{print $2}' | xargs)
+		echo "DOCKER_NAME is set to: ${DOCKER_NAME}"
 	fi
 }
 
@@ -153,16 +157,20 @@ call_func ()
 {
     FUNC=$1
     LOG=$2
-    if type "${FUNC}" 2>/dev/null | grep -q 'function' 2>/dev/null; then
+    # declare -F 精确判断函数存在；type|grep 会误匹配路径含 function 字样的命令
+    if declare -F "${FUNC}" >/dev/null 2>&1; then
 		if [ -n "${LOG}" ]; then
 			install_log "Begin ${FUNC}"
-			eval ${FUNC} 2>&1 | ${LOG}
-			install_log "End ${FUNC}"
+			eval "${FUNC}" 2>&1 | ${LOG}
+			CALL_RC=${PIPESTATUS[0]}
+			install_log "End ${FUNC} (rc=${CALL_RC})"
 		else
-			echo "Begin ${FUNC}" >> ${LOG_FILE}
-			eval ${FUNC}         >> ${LOG_FILE}
-			echo "End ${FUNC}"   >> ${LOG_FILE}
+			echo "Begin ${FUNC}" >> "${LOG_FILE}"
+			eval "${FUNC}"         >> "${LOG_FILE}"
+			CALL_RC=$?
+			echo "End ${FUNC} (rc=${CALL_RC})"   >> "${LOG_FILE}"
 		fi
+		return "${CALL_RC}"
     fi
 }
 
@@ -198,14 +206,19 @@ initialize_variables ()
 
 load_variables_from_file ()
 {
-   if [ -n "$1" -a -r "$1" ]; then
-      while read -r _line; do
-        if [ "$(echo ${_line} | grep -v ^[/s]*#)" != "" ]; then
-           _key="$(echo ${_line} | cut --fields=1 --delimiter==)"
-           _value="$(echo ${_line} | cut --fields=2- --delimiter==)"
-           export "${_key}=${_value}"
-        fi
-      done < "$1"
+   local _file="$1" _line _key _value
+   if [ -n "${_file}" ] && [ -r "${_file}" ]; then
+      while IFS= read -r _line || [ -n "${_line}" ]; do
+        # 去掉行首空白后再判断注释/空行
+        _line="${_line#"${_line%%[![:space:]]*}"}"
+        case "${_line}" in ''|'#'*) continue ;; esac
+        _key="${_line%%=*}"
+        # 无 '=' 或键不是合法变量名（含空格、以数字开头等）一律跳过
+        [ "${_key}" = "${_line}" ] && continue
+        case "${_key}" in ''|[0-9]*|*[!A-Za-z0-9_]*) continue ;; esac
+        _value="${_line#*=}"
+        export "${_key}=${_value}"
+      done < "${_file}"
    fi
 }
 
@@ -237,7 +250,10 @@ sync_var_folder () {
 install_init ()
 {
     log_step "install_init"
-    call_func "validate_preinst" install_log
+    # validate 钩子失败必须中止安装，不能被 call_func 的日志管道吞掉
+    if ! call_func "validate_preinst" install_log; then
+        error_exit "validate_preinst 校验失败，中止安装"
+    fi
     call_func "service_preinst" install_log
     exit 0
 }
@@ -268,8 +284,10 @@ uninstall_callback ()
     call_func "service_postuninst" install_log
     if [ "$wizard_delete_data" = "true" ]; then
         echo "Removing files..." | install_log
-        if [ "$(ls -A ${TRIM_PKGHOME})" != "" ]; then
-            find ${TRIM_PKGHOME} -mindepth 1 -delete -print | install_log
+        # TRIM_PKGHOME 由 fnOS 生命周期注入，非安装流程调用时可能未定义；
+        # 未定义时绝不能让 ls/find 落到当前目录（会误删 CWD）
+        if [ -n "${TRIM_PKGHOME:-}" ] && [ -d "${TRIM_PKGHOME}" ]; then
+            find "${TRIM_PKGHOME}" -mindepth 1 -delete -print | install_log
         fi
         if [ "$(ls -A ${TRIM_PKGVAR})" != "" ]; then
             find ${TRIM_PKGVAR} -mindepth 1 -delete -print | install_log
@@ -284,7 +302,9 @@ uninstall_callback ()
 upgrade_init ()
 {
     log_step "upgrade_init"
-    call_func "validate_preupgrade"  install_log
+    if ! call_func "validate_preupgrade"  install_log; then
+        error_exit "validate_preupgrade 校验失败，中止升级"
+    fi
     stop_daemon
     call_func "service_preupgrade" install_log
     call_func "service_save" install_log

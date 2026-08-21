@@ -10,15 +10,21 @@ if [ -r "${SVC_SETUP}" ]; then
     . "${SVC_SETUP}"
 fi
 
-case $1 in
+case "${1:-}" in
     start)
         if daemon_status; then
-            echo "${DNAME} is already running" >> ${LOG_FILE}
+            echo "${DNAME} is already running" >> "${LOG_FILE}"
             exit 0
         else
-            echo "Starting ${DNAME} ..." >> ${LOG_FILE}
+            echo "Starting ${DNAME} ..." >> "${LOG_FILE}"
             start_daemon
-            exit $?
+            # start_daemon 的后台分支恒返回 0，必须复核进程真实状态
+            if daemon_status; then
+                exit 0
+            else
+                echo "${DNAME} failed to start, see ${LOG_FILE}" >> "${LOG_FILE}"
+                exit 1
+            fi
         fi
         ;;
     stop)
@@ -64,6 +70,7 @@ case $1 in
         exit 0
         ;;
     *)
+        echo "Usage: $0 {start|stop|status|log [lines]}"
         exit 1
         ;;
 esac

@@ -75,17 +75,18 @@ if (!dshEnv.DEEPSEEK_BASE_URL) {
 }
 
 function appendEditableCredential(apiKey) {
-    if (!apiKey) return false;
     const credentialFile = path.join(WORKSPACE_DIR, '.dsh', '.credentials.yaml');
     try {
         let content = '';
         if (fs.existsSync(credentialFile)) {
             content = fs.readFileSync(credentialFile, 'utf-8');
-            // 早期版本会在可共享的工作区中留下权限过宽的凭据文件。新版 DSH
-            // 会拒绝启动，因此即使 Key 已存在也必须在每次启动前收紧权限。
+            // 无论本次是否写入 Key，只要文件存在就必须收紧权限：升级钩子或
+            // 共享目录操作可能放宽过权限，而新版 DSH 会因权限过宽拒绝启动。
             fs.chmodSync(credentialFile, 0o600);
+            if (!apiKey) return false;
             if (/^\s*DEEPSEEK_API_KEY\s*:/m.test(content)) return false;
         } else {
+            if (!apiKey) return false;
             fs.mkdirSync(path.dirname(credentialFile), { recursive: true, mode: 0o700 });
         }
         const separator = content.length === 0 || content.endsWith('\n') ? '' : '\n';
