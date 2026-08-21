@@ -2,6 +2,7 @@
 # 会出现 $'\r': command not found。构建产物与图片按二进制处理。
 *.sh     text eol=lf
 *.py     text eol=lf
+*.js     text eol=lf
 *.yml    text eol=lf
 *.yaml   text eol=lf
 *.json   text eol=lf
@@ -14,6 +15,7 @@
 *.jpg    binary
 *.ico    binary
 *.xz     binary
+.gitattributes text eol=lf
 
 # 无扩展名的 shell 脚本与配置（fnOS 生命周期框架、manifest、向导）
 shared/cmd/*             text eol=lf
