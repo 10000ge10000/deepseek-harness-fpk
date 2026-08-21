@@ -68,14 +68,31 @@ jobs:
         run: |
           set -euo pipefail
 
+          is_npm_version_ready() {
+            local ver="$1"
+            [ -z "$ver" ] && return 1
+            if npm view "@deepseek-ai/dsh@${ver}" version >/dev/null 2>&1; then
+              return 0
+            fi
+            return 1
+          }
+
           APP_VER=$(grep "^version" apps/deepseek-harness/fnos/manifest | awk -F'=' '{print $2}' | tr -d ' ')
-          LATEST_NPM_VER=$(npm view @deepseek-ai/dsh dist-tags.next 2>/dev/null || true)
-          if [ -z "$LATEST_NPM_VER" ]; then
-            LATEST_NPM_VER=$(npm view @deepseek-ai/dsh@latest version 2>/dev/null || echo "0.1.0-rc.8")
+          
+          NPM_NEXT_VER=$(npm view @deepseek-ai/dsh dist-tags.next 2>/dev/null || true)
+          NPM_LATEST_VER=$(npm view @deepseek-ai/dsh dist-tags.latest 2>/dev/null || true)
+          
+          LATEST_NPM_VER=""
+          if is_npm_version_ready "$NPM_NEXT_VER"; then
+            LATEST_NPM_VER="$NPM_NEXT_VER"
+          elif is_npm_version_ready "$NPM_LATEST_VER"; then
+            LATEST_NPM_VER="$NPM_LATEST_VER"
+          else
+            LATEST_NPM_VER="${APP_VER:-0.1.0-rc.8}"
           fi
 
           if [ "$EVENT_NAME" = "schedule" ]; then
-            # 定时任务以 npm 官方最新版本为准
+            # 定时任务以 npm 官方最新就绪版本为准
             TARGET_VER="$LATEST_NPM_VER"
             DSH_VER="$LATEST_NPM_VER"
           elif [ -n "$VERSION_INPUT" ]; then

@@ -50,7 +50,26 @@ mkdir -p "${WORK_DIR}/dsh-web"
 cd "${WORK_DIR}/dsh-web"
 "${WORK_DIR}/node/bin/npm" init -y >/dev/null 2>&1
 echo "==> Installing @deepseek-ai/dsh@${VERSION}..."
-"${WORK_DIR}/node/bin/node" "${WORK_DIR}/node/lib/node_modules/npm/bin/npm-cli.js" install "@deepseek-ai/dsh@${VERSION}" --omit=dev --no-audit --no-fund
+
+MAX_RETRIES=3
+RETRY_COUNT=0
+INSTALL_SUCCESS=false
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if "${WORK_DIR}/node/bin/node" "${WORK_DIR}/node/lib/node_modules/npm/bin/npm-cli.js" install "@deepseek-ai/dsh@${VERSION}" --omit=dev --no-audit --no-fund --prefer-online; then
+        INSTALL_SUCCESS=true
+        break
+    else
+        echo "⚠️ npm install 失败 (尝试 $RETRY_COUNT/$MAX_RETRIES)，等待 5 秒后重试..."
+        sleep 5
+    fi
+done
+
+if [ "$INSTALL_SUCCESS" != "true" ]; then
+    echo "❌ 安装 @deepseek-ai/dsh@${VERSION} 失败 (已重试 $MAX_RETRIES 次)" >&2
+    exit 1
+fi
 
 # 3. Assemble app_root (app.tgz content)
 mkdir -p "${WORK_DIR}/app_root/bin"
