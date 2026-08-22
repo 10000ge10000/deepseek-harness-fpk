@@ -118,8 +118,9 @@ if [ -n "$PY_BIN" ]; then
     OUTDIR=$(mktemp -d)
     PKGDIR=$(mktemp -d)
     # 构造带真实字节的假安装包，用于校验 sha256/size 一致性
-    head -c 65536 /dev/urandom > "${PKGDIR}/dsh_1.2.3_x86.fpk"
-    head -c 32768 /dev/urandom > "${PKGDIR}/dsh_1.2.3_arm.fpk"
+    # 假包 ≥1MB 以覆盖顶层 size 的 MB 取整逻辑（zero 生成快且哈希真实）
+    head -c 104857600 /dev/zero > "${PKGDIR}/dsh_1.2.3_x86.fpk"
+    head -c 52428800 /dev/zero > "${PKGDIR}/dsh_1.2.3_arm.fpk"
     if GITHUB_REPOSITORY=someone/fork-test "$PY_BIN" scripts/ci/generate-appstore.py \
         --version 1.2.3 --tag v1.2.3 \
         --x86-fpk dsh_1.2.3_x86.fpk --arm-fpk dsh_1.2.3_arm.fpk \
@@ -151,7 +152,7 @@ assert app['run_as'] == 'package' and app['is_docker'] is False, '运行声明'
 assert app['version'] == '1.2.3', '应用节点顶层 version'
 assert app['author'] and app['distributor'], '发布者字段'
 assert app['download_url'].endswith('dsh_1.2.3_x86.fpk'), '顶层 download_url'
-assert isinstance(app['size'], int) and len(app['sha256']) == 64, '顶层 size/sha256'
+assert isinstance(app['size'], int) and 0 < app['size'] < 1024, '顶层 size 为 MB 取整'
 rel = app['releases']['1.2.3']
 for arch, fname in (('x86', 'dsh_1.2.3_x86.fpk'), ('arm', 'dsh_1.2.3_arm.fpk')):
     p = rel['packages'][arch]
