@@ -143,7 +143,15 @@ else
     echo "  - 跳过：python 不可用"
 fi
 
-echo "== 8. build-fpk.sh 最小冒烟（假 app.tgz 组装结构）=="
+echo "== 8. CI 脚本路径解析（历史 bug：REPO_ROOT 曾多算一级）=="
+GOT_ROOT=$(cd /tmp && bash "${REPO_ROOT}/scripts/ci/build-package.sh" --print-root)
+if [ "${GOT_ROOT}" = "${REPO_ROOT}" ]; then
+    ok "build-package.sh REPO_ROOT 解析正确"
+else
+    bad "REPO_ROOT 解析错误: 期望 ${REPO_ROOT} 实际 ${GOT_ROOT}"
+fi
+
+echo "== 9. build-fpk.sh 最小冒烟（假 app.tgz 组装结构）=="
 SMOKE_DIR=$(mktemp -d)
 trap 'rm -rf "${SMOKE_DIR}"; rm -f "${REPO_ROOT}/deepseek-harness_9.9.9-test_x86.fpk" "${REPO_ROOT}/app.tgz"' EXIT
 mkdir -p "${SMOKE_DIR}/approot/bin"
