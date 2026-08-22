@@ -137,6 +137,12 @@ def build_fnpack(repo: str, ver: str, tag_name: str,
                 'icon_url': f'https://raw.githubusercontent.com/{repo}/main/apps/deepseek-harness/fnos/ICON_256.PNG',
                 'maintainer': '一万AI分享',
                 'maintainer_url': 'https://space.bilibili.com/59438380',
+                # 兼容字段：FnDepot 0.0.7 的 parse_fnpack_json 要求应用节点
+                # 必须有顶层 version 与 distributor/author（纯 releases 形式的
+                # V2 规范在已装机版本上会被判"缺少必要字段: version"）
+                'version': ver,
+                'author': '一万AI分享',
+                'distributor': '一万AI分享',
                 'run_as': 'package',
                 'install_type': '',
                 'is_docker': False,
