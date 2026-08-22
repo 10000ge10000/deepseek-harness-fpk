@@ -117,6 +117,49 @@ def apply_patches(app_root):
                     with open(p, 'w', encoding='utf-8') as fp:
                         fp.write(code)
 
+    # 关键补丁落点验证：上游改版可能让文本匹配静默落空，语法校验无法发现
+    # 『补丁没打上』。这里按补丁后的标志性代码复核，缺失即失败，防止把
+    # 局域网不可用的包发布出去（缺失的实机症状是 403 与 settings are
+    # unavailable）。以『标志存在』而非『本次替换发生』计数，重复执行
+    # （幂等）不会误报。
+    CRITICAL_MARKERS = {
+        'CSRF 信任放行': 'isTrustedApiRequest(request, trustedHosts) { return true;',
+        'loopback 信任修复 (Issue #2)': 'isLoopbackHostname(hostname) { return true;',
+        '浏览器端 isLoopback 直连': 'isLoopback: true, // fnOS fix',
+    }
+    OPTIONAL_MARKERS = {
+        '提供商改名（外观性，缺失仅告警）': 'name: "一万AI分享"',
+    }
+
+    def count_marker(marker):
+        hits = 0
+        for root, dirs, files in os.walk(modules_dir):
+            for f in files:
+                if f.endswith(('.js', '.mjs')):
+                    try:
+                        with open(os.path.join(root, f), 'r', encoding='utf-8', errors='ignore') as fp:
+                            if marker in fp.read():
+                                hits += 1
+                    except Exception:
+                        continue
+        return hits
+
+    failed = False
+    for label, marker in CRITICAL_MARKERS.items():
+        hits = count_marker(marker)
+        if hits == 0:
+            print(f"[FAIL] 关键补丁未命中: {label}（上游代码可能已变更，需人工更新 patch.py）")
+            failed = True
+        else:
+            print(f"[OK] 关键补丁验证通过: {label}（{hits} 处）")
+    for label, marker in OPTIONAL_MARKERS.items():
+        hits = count_marker(marker)
+        level = 'OK' if hits > 0 else 'WARN'
+        print(f"[{level}] 可选补丁 {label}: {hits} 处")
+
+    if failed:
+        print("[FAIL] 存在未命中的关键补丁，拒绝继续打包")
+        sys.exit(1)
     print("[OK] 全部补丁应用完成！")
 
 if __name__ == '__main__':

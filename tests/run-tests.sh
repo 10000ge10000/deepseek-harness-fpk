@@ -178,7 +178,64 @@ else
     bad "REPO_ROOT 解析错误: 期望 ${REPO_ROOT} 实际 ${GOT_ROOT}"
 fi
 
-echo "== 9. build-fpk.sh 最小冒烟（假 app.tgz 组装结构）=="
+echo "== 9. patch.py 补丁命中/漂移拒绝/幂等（上游自动适配的安全网）=="
+PY_BIN2=""
+if command -v python3 >/dev/null 2>&1; then PY_BIN2=python3
+elif command -v python >/dev/null 2>&1; then PY_BIN2=python
+fi
+if [ -n "$PY_BIN2" ]; then
+    FIX=$(mktemp -d)
+    mkdir -p "${FIX}/hit/node_modules/@deepseek-ai/dsh-server" \
+             "${FIX}/hit/node_modules/@deepseek-ai/dsh-client-connection" \
+             "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek" \
+             "${FIX}/drift/node_modules/@deepseek-ai/dsh-server"
+    # 命中夹具：包含全部补丁目标字符串
+    cat > "${FIX}/hit/node_modules/@deepseek-ai/dsh-server/index.js" <<'EOF'
+function isTrustedApiRequest(request, trustedHosts) {
+  return false;
+}
+function isLoopbackHostname(hostname) {
+  return hostname === "127.0.0.1";
+}
+EOF
+    printf 'const conn = { isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname), id: "deepseek-official", name: "DeepSeek" };\n' \
+        > "${FIX}/hit/node_modules/@deepseek-ai/dsh-client-connection/client.js"
+    printf 'export default { name: "DeepSeek", displayName: "DeepSeek" };\n' \
+        > "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js"
+    # 漂移夹具：上游改版后目标串全部消失
+    printf 'function isTrustedApiRequest(req){return verify(req);}\n' \
+        > "${FIX}/drift/node_modules/@deepseek-ai/dsh-server/index.js"
+
+    if "$PY_BIN2" "${REPO_ROOT}/scripts/apps/deepseek-harness/patch.py" "${FIX}/hit" >/dev/null 2>&1; then
+        ok "补丁全部命中 → 退出码 0"
+    else
+        bad "命中夹具被误判失败"
+    fi
+    if grep -q 'isLoopbackHostname(hostname) { return true;' "${FIX}/hit/node_modules/@deepseek-ai/dsh-server/index.js" \
+       && grep -q 'isLoopback: true, // fnOS fix' "${FIX}/hit/node_modules/@deepseek-ai/dsh-client-connection/client.js" \
+       && grep -q '一万AI分享' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js"; then
+        ok "三项关键补丁与改名实际生效"
+    else
+        bad "补丁内容未正确写入"
+    fi
+    # 幂等：二次执行不应因『未再替换』而误报失败
+    if "$PY_BIN2" "${REPO_ROOT}/scripts/apps/deepseek-harness/patch.py" "${FIX}/hit" >/dev/null 2>&1; then
+        ok "重复执行（幂等）不误报"
+    else
+        bad "幂等性被破坏"
+    fi
+    # 漂移：上游改版后必须拒绝打包
+    if "$PY_BIN2" "${REPO_ROOT}/scripts/apps/deepseek-harness/patch.py" "${FIX}/drift" >/dev/null 2>&1; then
+        bad "上游漂移未被发现（危险：会发布局域网不可用的包）"
+    else
+        ok "上游漂移 → 拒绝打包（退出码非 0）"
+    fi
+    rm -rf "${FIX}"
+else
+    echo "  - 跳过：python 不可用"
+fi
+
+echo "== 10. build-fpk.sh 最小冒烟（假 app.tgz 组装结构）=="
 SMOKE_DIR=$(mktemp -d)
 trap 'rm -rf "${SMOKE_DIR}"; rm -f "${REPO_ROOT}/deepseek-harness_9.9.9-test_x86.fpk" "${REPO_ROOT}/app.tgz"' EXIT
 mkdir -p "${SMOKE_DIR}/approot/bin"
