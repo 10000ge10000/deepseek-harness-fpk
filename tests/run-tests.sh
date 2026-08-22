@@ -204,6 +204,8 @@ EOF
     {
         printf 'export default { name: "DeepSeek", displayName: "DeepSeek" };\n'
         printf 'const DEFAULT_CONTEXT_WINDOW = 1e6;\n'
+        printf 'const DEFAULT_MAX_TOKENS = 256e3;\n'
+        printf 'const resolved = { maxTokens: config.maxTokens ?? 256e3 };\n'
         printf 'const DEFAULT_MODELS = [\n\t{\n\t\tid: "deepseek-v4-flash",\n\t\tname: "DeepSeek-V4-Flash",\n\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW\n\t},\n\t{\n\t\tid: "deepseek-v4-pro",\n\t\tname: "DeepSeek-V4-Pro",\n\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW\n\t},\n\t{\n\t\tid: "deepseek-v4-flash-vision-exp",\n\t\tname: "DeepSeek-V4-Flash-Vision-Exp",\n\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW,\n\t\tinputModalities: ["text", "image"],\n\t\timagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,\n\t\timageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES\n\t}\n];\n'
     } > "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js"
     # 漂移夹具：上游改版后目标串全部消失
@@ -220,6 +222,8 @@ EOF
        && grep -q '一万AI分享' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
        && grep -q 'const DEFAULT_CONTEXT_WINDOW = 2e5;' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
        && grep -q 'name: "一万AI分享DSH专用模型"' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
+       && grep -q 'const DEFAULT_MAX_TOKENS = 65536;' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
+       && grep -q 'config.maxTokens ?? 65536' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
        && ! grep -q 'deepseek-v4-pro' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js"; then
         ok "关键补丁、改名与单一品牌模型目录实际生效"
     else

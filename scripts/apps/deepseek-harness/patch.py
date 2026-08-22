@@ -35,7 +35,8 @@ DEFAULT_MODELS_UPSTREAM = (
 )
 
 # 收敛后的目录：仅保留默认模型（id 不变，API 请求与公益站完全兼容），
-# 显示名换品牌名；上下文由 DEFAULT_CONTEXT_WINDOW=2e5 统一锁定为 200k。
+# 显示名换品牌名；上下文由 DEFAULT_CONTEXT_WINDOW=2e5 锁定为 200k，
+# 输出上限由 DEFAULT_MAX_TOKENS=65536 锁定为 64k。
 DEFAULT_MODELS_BRANDED = (
     'const DEFAULT_MODELS = [\n'
     '\t{\n'
@@ -107,6 +108,12 @@ def apply_patches(app_root):
                     code = code.replace('displayName: "DeepSeek"', f'displayName: "{PRESET_PROVIDER_LABEL}"')
                     code = code.replace('const DEFAULT_CONTEXT_WINDOW = 1e6;', 'const DEFAULT_CONTEXT_WINDOW = 2e5;')
                     code = code.replace(DEFAULT_MODELS_UPSTREAM, DEFAULT_MODELS_BRANDED)
+                    # 输出上限：上游默认 256e3（256k）大于 200k 窗口，语义倒挂；
+                    # 且该值经 dsh-llm resolveCallWithInfo 以 defaultMaxTokens
+                    # 随每个请求作为 max_tokens 下发。收敛为 64k：覆盖 reasoningEffort
+                    # = max 的长推理输出，并为历史输入留出 ≥136k。
+                    code = code.replace('const DEFAULT_MAX_TOKENS = 256e3;', 'const DEFAULT_MAX_TOKENS = 65536;')
+                    code = code.replace('config.maxTokens ?? 256e3', 'config.maxTokens ?? 65536')
                     changed = changed or code != before
                     # 目录收敛的结构性复核：整块替换若因上游改版落空，残留的
                     # v4-pro / vision-exp 条目说明匹配已漂移，必须显式失败，
@@ -179,6 +186,8 @@ def apply_patches(app_root):
         '浏览器端 isLoopback 直连': 'isLoopback: true, // fnOS fix',
         '上下文窗口锁定 200k': 'const DEFAULT_CONTEXT_WINDOW = 2e5;',
         '单一品牌模型目录': f'name: "{PRESET_MODEL_LABEL}"',
+        '输出上限锁定 64k（常量）': 'const DEFAULT_MAX_TOKENS = 65536;',
+        '输出上限锁定 64k（回退值）': 'config.maxTokens ?? 65536',
     }
     OPTIONAL_MARKERS = {
         '提供商改名（外观性，缺失仅告警）': 'name: "一万AI分享"',
