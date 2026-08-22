@@ -84,6 +84,14 @@ if [ -z "$TARGET_VER" ] || [ -z "$DSH_VER" ]; then
     exit 1
 fi
 
+# 统一校验：解析出的 DSH 版本必须在 npm 真实存在，否则在 resolve 阶段
+# 快速失败并给出可行动的提示（而不是拖到 ARM 构建才报 npm notarget）
+if ! is_npm_version_ready "$DSH_VER"; then
+    echo "DSH 版本 ${DSH_VER} 在 npm 上不存在（@deepseek-ai/dsh），" >&2
+    echo "请确认 version / dsh_version 输入，或 npm registry 是否可达。" >&2
+    exit 1
+fi
+
 if [ "$IS_TAG" = true ]; then
     RELEASE_TAG="$REF_NAME"
 else
