@@ -189,7 +189,8 @@ if [ -n "$PY_BIN2" ]; then
              "${FIX}/hit/node_modules/@deepseek-ai/dsh-client-connection" \
              "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek" \
              "${FIX}/drift/node_modules/@deepseek-ai/dsh-server"
-    # 命中夹具：包含全部补丁目标字符串
+    # 命中夹具：包含全部补丁目标字符串；模型目录块用 printf 生成，
+    # \t 由 printf 解释为真实 tab，与上游生成物的缩进字节一致
     cat > "${FIX}/hit/node_modules/@deepseek-ai/dsh-server/index.js" <<'EOF'
 function isTrustedApiRequest(request, trustedHosts) {
   return false;
@@ -200,8 +201,11 @@ function isLoopbackHostname(hostname) {
 EOF
     printf 'const conn = { isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname), id: "deepseek-official", name: "DeepSeek" };\n' \
         > "${FIX}/hit/node_modules/@deepseek-ai/dsh-client-connection/client.js"
-    printf 'export default { name: "DeepSeek", displayName: "DeepSeek" };\n' \
-        > "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js"
+    {
+        printf 'export default { name: "DeepSeek", displayName: "DeepSeek" };\n'
+        printf 'const DEFAULT_CONTEXT_WINDOW = 1e6;\n'
+        printf 'const DEFAULT_MODELS = [\n\t{\n\t\tid: "deepseek-v4-flash",\n\t\tname: "DeepSeek-V4-Flash",\n\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW\n\t},\n\t{\n\t\tid: "deepseek-v4-pro",\n\t\tname: "DeepSeek-V4-Pro",\n\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW\n\t},\n\t{\n\t\tid: "deepseek-v4-flash-vision-exp",\n\t\tname: "DeepSeek-V4-Flash-Vision-Exp",\n\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW,\n\t\tinputModalities: ["text", "image"],\n\t\timagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,\n\t\timageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES\n\t}\n];\n'
+    } > "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js"
     # 漂移夹具：上游改版后目标串全部消失
     printf 'function isTrustedApiRequest(req){return verify(req);}\n' \
         > "${FIX}/drift/node_modules/@deepseek-ai/dsh-server/index.js"
@@ -213,8 +217,11 @@ EOF
     fi
     if grep -q 'isLoopbackHostname(hostname) { return true;' "${FIX}/hit/node_modules/@deepseek-ai/dsh-server/index.js" \
        && grep -q 'isLoopback: true, // fnOS fix' "${FIX}/hit/node_modules/@deepseek-ai/dsh-client-connection/client.js" \
-       && grep -q '一万AI分享' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js"; then
-        ok "三项关键补丁与改名实际生效"
+       && grep -q '一万AI分享' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
+       && grep -q 'const DEFAULT_CONTEXT_WINDOW = 2e5;' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
+       && grep -q 'name: "一万AI分享DSH专用模型"' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
+       && ! grep -q 'deepseek-v4-pro' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js"; then
+        ok "关键补丁、改名与单一品牌模型目录实际生效"
     else
         bad "补丁内容未正确写入"
     fi

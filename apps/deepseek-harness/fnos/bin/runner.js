@@ -117,25 +117,6 @@ function migrateLegacyDefaultModel() {
     }
 }
 
-function ensurePublicSiteContextLimit() {
-    const settingsFile = path.join(WORKSPACE_DIR, '.dsh', 'settings.yaml');
-    try {
-        if (!fs.existsSync(settingsFile)) return false;
-        let content = fs.readFileSync(settingsFile, 'utf-8');
-        if (!content.includes('defaultContextWindow:') && !content.includes('llm-deepseek:')) {
-            // 内置 catalog 已含 deepseek-v4-flash/pro，这里只注入上下文上限；
-            // 若同时写入 models 条目会与内置目录重复（正是 dedupeCatalogModels
-            // 要剔除的对象），导致注入被自我抵消。
-            const extraConfig = `\nllm-deepseek:\n  defaultContextWindow: 200000\n`;
-            fs.appendFileSync(settingsFile, extraConfig, 'utf-8');
-            return true;
-        }
-    } catch (e) {
-        console.warn('[Runner] 初始化公益站点模型上下文限制失败:', e.message);
-    }
-    return false;
-}
-
 // 修复 "duplicate catalog model" 导致的 boot 失败（症状：UI 里所有会话消失）。
 // dsh-llm-deepseek 的内置 catalog 已含 deepseek-v4-flash / deepseek-v4-pro，
 // 若 settings.yaml 的 llm-deepseek.models 也写入了同名 id，启动时模型条目重复，
@@ -196,7 +177,6 @@ function dedupeCatalogModels() {
 
 const seededCredential = appendEditableCredential(wizardApiKey);
 const migratedModel = migrateLegacyDefaultModel();
-const contextLimitInjected = ensurePublicSiteContextLimit();
 const catalogDeduped = dedupeCatalogModels();
 
 // 强力 Polyfill 脚本：全面覆盖 window, self, globalThis, Crypto.prototype 以及 AbortSignal.any / AbortSignal.timeout
@@ -302,7 +282,6 @@ console.log(`[Runner] 正在启动 DeepSeek Harness 后台服务 (127.0.0.1:${DS
 console.log(`[Runner] 默认 API 端点: ${dshEnv.DEEPSEEK_BASE_URL}，Models 页面可覆盖`);
 if (seededCredential) console.log('[Runner] 已将向导 API Key 初始化为可编辑凭据');
 if (migratedModel) console.log('[Runner] 已迁移旧的一万AI分享默认模型配置');
-if (contextLimitInjected) console.log('[Runner] 已为内置公益站点模型配置 200k 上下文上限保护 (支持自动静默压缩)');
 if (catalogDeduped) console.log('[Runner] 已剔除 llm-deepseek 配置中与内置目录重复的模型条目');
 
 const dshProcess = spawn(NODE_BIN, [DSH_BIN, 'web', '--host', '127.0.0.1', '--port', String(DSH_PORT)], {
