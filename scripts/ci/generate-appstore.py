@@ -107,6 +107,12 @@ def build_fnpack(repo: str, ver: str, tag_name: str,
 
     apps 键名必须与 FPK manifest 的 appname 完全一致（deepseek-harness）；
     run_as/install_type/is_docker 与 config/privilege 声明对齐。
+
+    兼容性说明（实测 FnDepot 0.0.7，2026-08）：JSON 直链源的 _sync_app
+    按扁平字段处理，应用节点必须有顶层 version / author|distributor /
+    download_url / size，否则分别报『缺少必要字段』『json 源格式无效』
+    『缺少 download_url（JSON 直链源必须提供）』；releases/packages 的
+    按架构分包结构保留给支持 V2 完整规范的新版客户端。
     """
     packages = {}
     for arch, fpk in (('x86', x86_fpk), ('arm', arm_fpk)):
@@ -137,12 +143,13 @@ def build_fnpack(repo: str, ver: str, tag_name: str,
                 'icon_url': f'https://raw.githubusercontent.com/{repo}/main/apps/deepseek-harness/fnos/ICON_256.PNG',
                 'maintainer': '一万AI分享',
                 'maintainer_url': 'https://space.bilibili.com/59438380',
-                # 兼容字段：FnDepot 0.0.7 的 parse_fnpack_json 要求应用节点
-                # 必须有顶层 version 与 distributor/author（纯 releases 形式的
-                # V2 规范在已装机版本上会被判"缺少必要字段: version"）
+                # FnDepot 0.0.7 兼容字段（详见函数 docstring）
                 'version': ver,
                 'author': '一万AI分享',
                 'distributor': '一万AI分享',
+                'download_url': packages['x86']['download_url'],
+                'sha256': packages['x86']['sha256'],
+                'size': packages['x86']['size'],
                 'run_as': 'package',
                 'install_type': '',
                 'is_docker': False,

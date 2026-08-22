@@ -146,9 +146,12 @@ app = fp['apps']['deepseek-harness']
 assert app['platform'] == ['x86', 'arm'], 'platform'
 assert app['categories'] == ['AI赋能'], 'categories'
 assert app['run_as'] == 'package' and app['is_docker'] is False, '运行声明'
-# 兼容字段：FnDepot 0.0.7 校验必需（曾因缺失顶层 version 报"json 源格式无效"）
+# 兼容字段：FnDepot 0.0.7 校验必需（曾因缺失顶层 version 报"json 源格式无效"，
+# 缺 download_url 报"JSON 直链源必须提供"）
 assert app['version'] == '1.2.3', '应用节点顶层 version'
 assert app['author'] and app['distributor'], '发布者字段'
+assert app['download_url'].endswith('dsh_1.2.3_x86.fpk'), '顶层 download_url'
+assert isinstance(app['size'], int) and len(app['sha256']) == 64, '顶层 size/sha256'
 rel = app['releases']['1.2.3']
 for arch, fname in (('x86', 'dsh_1.2.3_x86.fpk'), ('arm', 'dsh_1.2.3_arm.fpk')):
     p = rel['packages'][arch]
