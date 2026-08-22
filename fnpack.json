@@ -20,6 +20,9 @@
       "icon_url": "https://raw.githubusercontent.com/10000ge10000/deepseek-harness-fpk/main/apps/deepseek-harness/fnos/ICON_256.PNG",
       "maintainer": "一万AI分享",
       "maintainer_url": "https://space.bilibili.com/59438380",
+      "version": "0.1.1-rc.2",
+      "author": "一万AI分享",
+      "distributor": "一万AI分享",
       "run_as": "package",
       "install_type": "",
       "is_docker": false,
@@ -27,7 +30,7 @@
       "releases": {
         "0.1.1-rc.2": {
           "changelog": "开箱即用的公益端点与预制提供商；凭据权限收紧（600）；停止彻底释放端口；支持局域网 Polyfill 与飞牛文件管理双向互通。",
-          "updated_at": "2026-08-22T06:19:53+00:00",
+          "updated_at": "2026-08-22T06:48:41+00:00",
           "packages": {
             "x86": {
               "download_url": "https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/v0.1.1-rc.2/deepseek-harness_0.1.1-rc.2_x86.fpk",
