@@ -35,7 +35,7 @@ NPM_LATEST_VER=$(npm view @deepseek-ai/dsh dist-tags.latest 2>/dev/null || true)
 
 # 版本兜底值以 meta.env 为单一来源
 DSH_FALLBACK_VERSION=$(sed -n 's/^DSH_FALLBACK_VERSION=//p' scripts/apps/deepseek-harness/meta.env | tr -d '[:space:]')
-[ -z "$DSH_FALLBACK_VERSION" ] && DSH_FALLBACK_VERSION="0.1.0-rc.8"
+[ -z "$DSH_FALLBACK_VERSION" ] && DSH_FALLBACK_VERSION="0.1.1-rc.2"
 
 LATEST_NPM_VER=""
 if is_npm_version_ready "$NPM_NEXT_VER"; then

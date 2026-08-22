@@ -12,7 +12,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 # 版本兜底与 Node 版本均以 meta.env 为单一来源
 DSH_FALLBACK_VERSION="${DSH_FALLBACK_VERSION:-$(sed -n 's/^DSH_FALLBACK_VERSION=//p' "${SCRIPT_DIR}/meta.env" 2>/dev/null | tr -d '[:space:]')}"
 if [ -z "${DSH_FALLBACK_VERSION}" ]; then
-    DSH_FALLBACK_VERSION="0.1.0-rc.8"
+    DSH_FALLBACK_VERSION="0.1.1-rc.2"
 fi
 NODE_VERSION="${NODE_VERSION:-$(sed -n 's/^NODE_VERSION=//p' "${SCRIPT_DIR}/meta.env" 2>/dev/null | tr -d '[:space:]')}"
 if [ -z "${NODE_VERSION}" ]; then
