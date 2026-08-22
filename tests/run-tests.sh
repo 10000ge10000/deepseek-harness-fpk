@@ -116,14 +116,18 @@ elif command -v python >/dev/null 2>&1; then PY_BIN=python
 fi
 if [ -n "$PY_BIN" ]; then
     OUTDIR=$(mktemp -d)
+    PKGDIR=$(mktemp -d)
+    # 构造带真实字节的假安装包，用于校验 sha256/size 一致性
+    head -c 65536 /dev/urandom > "${PKGDIR}/dsh_1.2.3_x86.fpk"
+    head -c 32768 /dev/urandom > "${PKGDIR}/dsh_1.2.3_arm.fpk"
     if GITHUB_REPOSITORY=someone/fork-test "$PY_BIN" scripts/ci/generate-appstore.py \
         --version 1.2.3 --tag v1.2.3 \
         --x86-fpk dsh_1.2.3_x86.fpk --arm-fpk dsh_1.2.3_arm.fpk \
-        --out-dir "${OUTDIR}" >/dev/null 2>&1; then
+        --out-dir "${OUTDIR}" --pkg-dir "${PKGDIR}" >/dev/null 2>&1; then
         ok "脚本执行成功"
-        "$PY_BIN" - "$OUTDIR" <<'PYEOF' 2>/dev/null
-import json, sys, os
-out = sys.argv[1]
+        "$PY_BIN" - "$OUTDIR" "${PKGDIR}" <<'PYEOF' 2>/dev/null
+import json, sys, os, hashlib
+out, pkgdir = sys.argv[1], sys.argv[2]
 data = json.load(open(os.path.join(out, 'appstore.json'), encoding='utf-8'))
 assert len(data['apps']) == 2, 'apps 数量'
 x86 = [a for a in data['apps'] if a['platform'] == 'x86'][0]
@@ -132,13 +136,29 @@ assert 'someone/fork-test' in x86['download_url'], '仓库 slug 来自 GITHUB_RE
 assert 'someone/fork-test' in x86['icon'], 'icon 链接同样参数化'
 html = open(os.path.join(out, 'index.html'), encoding='utf-8').read()
 assert 'dsh_1.2.3_arm.fpk' in html, 'HTML 含 ARM 下载文件名'
-assert '1.2.3' in html, 'HTML 含版本号'
+assert 'fnpack.json' in html, 'HTML 含 FnDepot 源地址卡片'
+
+# FnDepot V2 格式校验（严格 JSON + 关键字段 + 指纹一致性）
+raw = open(os.path.join(out, 'fnpack.json'), encoding='utf-8').read()
+fp = json.loads(raw)  # 严格解析：注释/尾逗号会抛异常
+assert fp['schema_version'] == '2' and isinstance(fp['schema_version'], str), 'schema_version 必须是字符串 "2"'
+app = fp['apps']['deepseek-harness']
+assert app['platform'] == ['x86', 'arm'], 'platform'
+assert app['categories'] == ['AI赋能'], 'categories'
+assert app['run_as'] == 'package' and app['is_docker'] is False, '运行声明'
+rel = app['releases']['1.2.3']
+for arch, fname in (('x86', 'dsh_1.2.3_x86.fpk'), ('arm', 'dsh_1.2.3_arm.fpk')):
+    p = rel['packages'][arch]
+    blob = open(os.path.join(pkgdir, fname), 'rb').read()
+    assert p['sha256'] == hashlib.sha256(blob).hexdigest(), f'{arch} sha256 与真实文件一致'
+    assert p['size'] == len(blob), f'{arch} size 与真实文件一致'
+    assert 'someone/fork-test' in p['download_url'], f'{arch} 链接参数化'
 PYEOF
-        check $? "JSON/HTML 内容与 fork 参数化正确"
+        check $? "JSON/HTML/fnpack 内容与 fork 参数化正确"
     else
         bad "脚本执行失败"
     fi
-    rm -rf "${OUTDIR}"
+    rm -rf "${OUTDIR}" "${PKGDIR}"
 else
     echo "  - 跳过：python 不可用"
 fi
