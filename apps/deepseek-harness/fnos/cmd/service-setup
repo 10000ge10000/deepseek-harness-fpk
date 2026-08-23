@@ -69,16 +69,18 @@ service_prestart() {
     # 3. 确保存储和配置目录存在且具备写权限
     mkdir -p "${TRIM_PKGVAR}/config" 2>/dev/null || true
 
-    # 4. 确保飞牛共享目录打通
+    # 4. 确保飞牛共享目录打通与权限细分：
+    # - 凭据目录 (.dsh) 保持严格收紧 (700/600)，防止 API Key 泄露或被拒启
+    # - 工作区目录 (workspace) 开放全权 (777) 并配置 Default ACL，确保 NAS 用户上传与 DSH 生成互通
     SHARE_WORKSPACE="/vol1/@appshare/DeepSeekHarness"
     if [ -d "/vol1" ]; then
         mkdir -p "${SHARE_WORKSPACE}/workspace" "${SHARE_WORKSPACE}/data" 2>/dev/null || true
-        # 权限与 config/privilege（run-as: package）和 config/resource（rw: 专用用户）
-        # 声明对齐：owner 读写执行、其他人无权限。绝不能 chmod -R 777——那会把
-        # .dsh/.credentials.yaml（API Key）变成全局可读，新版 dsh 也会因权限过宽拒启。
-        chown -R deepseek-harness:deepseek-harness "${SHARE_WORKSPACE}" 2>/dev/null || true
-        chmod -R u+rwX,go-rwx "${SHARE_WORKSPACE}" 2>/dev/null || true
-        # 凭据目录显式收紧（历史版本可能放宽过）
+        chmod 755 "${SHARE_WORKSPACE}" 2>/dev/null || true
+        chmod -R a+rwX "${SHARE_WORKSPACE}/workspace" 2>/dev/null || true
+        if command -v setfacl >/dev/null 2>&1; then
+            setfacl -R -m u:deepseek-harness:rwx,g:deepseek-harness:rwx,o::rwx "${SHARE_WORKSPACE}/workspace" 2>/dev/null || true
+            setfacl -R -d -m u:deepseek-harness:rwx,g:deepseek-harness:rwx,d:o::rwx "${SHARE_WORKSPACE}/workspace" 2>/dev/null || true
+        fi
         chmod 700 "${SHARE_WORKSPACE}/.dsh" 2>/dev/null || true
         chmod 600 "${SHARE_WORKSPACE}/.dsh/.credentials.yaml" 2>/dev/null || true
         # data 若已是符号链接则直接刷新；真目录仅在为空时替换为链接，非空则保留并跳过

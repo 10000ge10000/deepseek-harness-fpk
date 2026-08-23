@@ -31,6 +31,23 @@ if (fs.existsSync('/vol1/@appshare/DeepSeekHarness')) {
     WORKSPACE_DIR = '/vol1';
 }
 
+// 确保 umask 为 0，使 DSH 创建的文件与目录对宿主机 NAS 用户及 SMB 保持完全可读写
+try {
+    process.umask(0);
+} catch (e) {}
+
+function ensureWorkspacePermissions() {
+    const wsDir = path.join(WORKSPACE_DIR, 'workspace');
+    try {
+        if (!fs.existsSync(wsDir)) {
+            fs.mkdirSync(wsDir, { recursive: true, mode: 0o777 });
+        } else {
+            fs.chmodSync(wsDir, 0o777);
+        }
+    } catch (e) {}
+}
+ensureWorkspacePermissions();
+
 // 读取向导配置变量 (wizard_variables)
 const dshEnv = { ...process.env };
 const wizardVarsFile = path.join(VAR_DIR, 'wizard_variables');
