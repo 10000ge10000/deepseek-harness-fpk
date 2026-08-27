@@ -316,8 +316,102 @@ dshProcess.on('exit', (code, signal) => {
     process.exit(code || 0);
 });
 
+const FORBIDDEN_PAGE = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>无法直接访问 - DeepSeek Harness</title>
+<style>
+body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+       background: #f5f6f8; color: #1f2329;
+       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; }
+.card { max-width: 30rem; padding: 2.5rem; background: #fff; border-radius: 12px;
+        box-shadow: 0 2px 16px rgba(0,0,0,.08); text-align: center; }
+h1 { margin: 0 0 1rem; font-size: 1.25rem; }
+p { margin: .5rem 0; line-height: 1.7; color: #4e5969; }
+code { padding: .1rem .4rem; background: #f0f1f3; border-radius: 4px; font-size: .9em; }
+</style>
+</head>
+<body>
+<div class="card">
+<h1>无法直接访问</h1>
+<p>DeepSeek Harness 仅支持从<strong>飞牛桌面</strong>打开。</p>
+<p>请返回飞牛桌面，点击 <code>DeepSeek Harness</code> 应用图标进入。</p>
+</div>
+</body>
+</html>`;
+
+/**
+ * 从 Host 头取主机名：去掉端口，并兼容 IPv6 字面量（如 [::1]:3080 -> ::1）。
+ * 解析失败返回空串，由调用方按「不可信」处理。
+ */
+function hostnameFromHostHeader(hostHeader) {
+    if (!hostHeader) return '';
+    try {
+        return new URL(`http://${hostHeader}`).hostname;
+    } catch (e) {
+        return '';
+    }
+}
+
+/** 从 Referer 取主机名；畸形 URL 返回空串。 */
+function hostnameFromReferer(referer) {
+    if (!referer) return '';
+    try {
+        return new URL(referer).hostname;
+    } catch (e) {
+        return '';
+    }
+}
+
+/**
+ * 判定是否为「文档级导航」：地址栏直连与 iframe 嵌入都属于这一类，
+ * 而页面内的脚本、样式、接口调用和 WebSocket 握手都不属于。
+ */
+function isNavigationRequest(req) {
+    const dest = req.headers['sec-fetch-dest'];
+    if (dest !== undefined) {
+        // Chrome/Edge/Firefox 及 Safari 16.4+ 都会带该头，语义明确，优先采信
+        return dest === 'document' || dest === 'iframe' || dest === 'frame';
+    }
+    // 老旧 WebView（微信等）不发 Sec-Fetch-* 头，退化为「请求 HTML 的 GET/HEAD」判定
+    if (req.method !== 'GET' && req.method !== 'HEAD') return false;
+    return (req.headers.accept || '').includes('text/html');
+}
+
+/**
+ * 入口收敛：飞牛桌面控制页的 iframe 是唯一入口（见 ui/config：type=iframe、
+ * port=3080），浏览器地址栏直连 http://<NAS_IP>:3080 应被拦下。
+ *
+ * 只对文档级导航设卡，应用内请求一律放行。两点原因：
+ * 1) 进入应用必须先取到 HTML 文档，拦住文档即拦住整个直连场景；
+ * 2) WebSocket 握手只发 Origin 不发 Referer，若一并纳入 Referer 校验，
+ *    会话列表与消息流会被直接打死。
+ *
+ * 放行条件为 Referer 主机名与本次请求 Host 主机名一致：飞牛控制页与本应用
+ * 同机不同端口（5666 / 3080），主机名相同；地址栏直连不带 Referer，外站
+ * 链接跳入则主机名不匹配，两者都会被拦。
+ */
+function isAllowedRequest(req) {
+    if (!isNavigationRequest(req)) return true;
+    const refererHost = hostnameFromReferer(req.headers.referer);
+    if (!refererHost) return false;
+    return refererHost === hostnameFromHostHeader(req.headers.host);
+}
+
 // 创建透明反代服务 (0.0.0.0:3080)
 const proxyServer = http.createServer((clientReq, clientRes) => {
+    // 先做来源判定：此处读的是客户端原始头，必须在下方改写 Referer 之前完成
+    if (!isAllowedRequest(clientReq)) {
+        clientRes.writeHead(403, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store'
+        });
+        clientRes.end(FORBIDDEN_PAGE);
+        return;
+    }
+
     const headers = {
         ...clientReq.headers,
         'x-forwarded-for': clientReq.socket.remoteAddress,

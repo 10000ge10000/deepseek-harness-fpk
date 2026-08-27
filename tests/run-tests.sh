@@ -270,6 +270,85 @@ else
     bad "build-fpk.sh 失败: ${OUT}"
 fi
 
+echo "== 11. 入口收敛门控（仅飞牛桌面 iframe 可进入）=="
+if command -v node >/dev/null 2>&1; then
+    node - <<'NODEEOF' 2>&1
+const fs = require('fs');
+const src = fs.readFileSync('apps/deepseek-harness/fnos/bin/runner.js', 'utf8');
+// 门控的 4 个函数在 runner.js 里是连续的一段，按边界整段取出后单独求值，
+// 避免 require 触发 runner.js 顶层的启动副作用（spawn dsh、监听端口）
+const start = src.indexOf('function hostnameFromHostHeader(');
+const end = src.indexOf('// 创建透明反代服务');
+if (start === -1 || end === -1 || end <= start) {
+    console.log('  ✗ 无法从 runner.js 提取门控函数（边界标记变更？）');
+    process.exit(1);
+}
+const block = src.slice(start, end);
+const { isAllowedRequest } = new Function(
+    block + '\nreturn { isAllowedRequest };'
+)();
+
+const NAS = '10.10.10.10:3080';
+const PANEL = 'http://10.10.10.10:5666/';
+const cases = [
+    // [用例名, 请求, 期望放行]
+    ['地址栏直连：document 且无 Referer → 拦截',
+        { method: 'GET', headers: { host: NAS, 'sec-fetch-dest': 'document', accept: 'text/html' } }, false],
+    ['飞牛桌面 iframe 首次导航 → 放行',
+        { method: 'GET', headers: { host: NAS, 'sec-fetch-dest': 'iframe', referer: PANEL, accept: 'text/html' } }, true],
+    ['iframe 内子资源（script）→ 放行',
+        { method: 'GET', headers: { host: NAS, 'sec-fetch-dest': 'script', referer: 'http://10.10.10.10:3080/' } }, true],
+    ['应用内 fetch（dest=empty）→ 放行',
+        { method: 'POST', headers: { host: NAS, 'sec-fetch-dest': 'empty' } }, true],
+    ['WebSocket 握手（只发 Origin 不发 Referer）→ 放行',
+        { method: 'GET', headers: { host: NAS, 'sec-fetch-dest': 'websocket', origin: 'http://10.10.10.10:3080' } }, true],
+    ['外站链接跳入：Referer 主机名不匹配 → 拦截',
+        { method: 'GET', headers: { host: NAS, 'sec-fetch-dest': 'document', referer: 'http://evil.example/', accept: 'text/html' } }, false],
+    ['老 WebView 无 Sec-Fetch：HTML GET 无 Referer → 拦截',
+        { method: 'GET', headers: { host: NAS, accept: 'text/html,application/xhtml+xml' } }, false],
+    ['老 WebView 无 Sec-Fetch：HTML GET 带同主机 Referer → 放行',
+        { method: 'GET', headers: { host: NAS, accept: 'text/html', referer: PANEL } }, true],
+    ['老 WebView 无 Sec-Fetch：JSON 接口请求 → 放行',
+        { method: 'POST', headers: { host: NAS, accept: 'application/json' } }, true],
+    // 门控目标是拦住浏览器误入，不是防命令行伪造：真实浏览器发起顶层导航时
+    // 必定带 Sec-Fetch-Dest: document 或 Accept: text/html，而裸 curl 两者皆无，
+    // 判定为非导航而放行。此用例固化该取舍，避免日后被误读为漏洞。
+    ['裸 curl（Accept: */* 且无 Sec-Fetch）→ 放行（非导航）',
+        { method: 'GET', headers: { host: NAS, accept: '*/*' } }, true],
+    ['IPv6 Host 与 Referer 主机名一致 → 放行',
+        { method: 'GET', headers: { host: '[::1]:3080', 'sec-fetch-dest': 'iframe', referer: 'http://[::1]:5666/', accept: 'text/html' } }, true],
+    ['畸形 Referer → 拦截',
+        { method: 'GET', headers: { host: NAS, 'sec-fetch-dest': 'document', referer: 'not a url', accept: 'text/html' } }, false],
+    ['缺 Host 头 → 拦截',
+        { method: 'GET', headers: { 'sec-fetch-dest': 'document', referer: PANEL, accept: 'text/html' } }, false],
+];
+
+let failed = 0;
+for (const [name, req, want] of cases) {
+    let got;
+    try {
+        got = isAllowedRequest(req);
+    } catch (e) {
+        console.log(`  ✗ ${name}（抛异常: ${e.message}）`);
+        failed++;
+        continue;
+    }
+    if (got === want) {
+        console.log(`  ✓ ${name}`);
+    } else {
+        console.log(`  ✗ ${name}（期望 ${want} 实际 ${got}）`);
+        failed++;
+    }
+}
+process.exit(failed === 0 ? 0 : 1);
+NODEEOF
+    GATE_RC=$?
+    # 子进程已逐条打印明细，这里只把整节结果并入总计
+    check "$GATE_RC" "门控判定矩阵（13 个用例）"
+else
+    echo "  - 跳过：node 不可用"
+fi
+
 echo
 echo "================================"
 echo "结果: ${PASS} 通过, ${FAIL} 失败"
