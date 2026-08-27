@@ -136,15 +136,6 @@ def apply_patches(app_root):
 
                 # 3. 定制 dsh-host-directory-picker-browse 飞牛共享目录
                 if 'dsh-host-directory-picker-browse' in p and f == 'index.js':
-                    # 上游 rc.8 起生成物以 `import fs from "node:fs";` 开头，
-                    # 两种引号形式都覆盖；若该行不存在则跳过（保持原文件）。
-                    if 'import fs from "node:fs";' in code:
-                        code = code.replace('import fs from "node:fs";\n', '')
-                        code = 'import fs from "node:fs";\n' + code
-                    elif 'import fs from node:fs;\n' in code:
-                        code = code.replace('import fs from node:fs;\n', 'import fs from "node:fs";\n')
-                        changed = True
-
                     fnos_block = '''function fnosTargetHome() {
 \ttry {
 \t\tif (fs.existsSync("/vol1/@appshare/DeepSeekHarness")) return "/vol1/@appshare/DeepSeekHarness";
@@ -169,7 +160,23 @@ def apply_patches(app_root):
                         # 只注入一次；残留的多余赋值（旧注入还原后与原文件叠加）一律清除
                         code = code.replace(target, fnos_block, 1)
                         code = code.replace(target, '')
+                        # fnosTargetHome 用同步的 fs.existsSync，而上游只具名导入
+                        # node:fs/promises（无 fs 默认绑定），必须补一行默认导入。
+                        # 缺这行时 fs 未定义，ReferenceError 被 fnosTargetHome 内的
+                        # try/catch 吞掉并静默回落 homedir()，且 node --check 只验语法
+                        # 查不出来——补丁看似成功、实际失效。
+                        if not re.search(r'^import fs from "node:fs";$', code, flags=re.M):
+                            code = 'import fs from "node:fs";\n' + code
                         changed = True
+
+                    # 结构性复核（文件级，不能用全局 CRITICAL_MARKERS 代替：
+                    # `import fs from "node:fs";` 在其他包里天然存在，全局计数会假通过）。
+                    # 只要该文件用了 fs.，就必须有配套的默认导入。
+                    if 'fs.' in code and not re.search(r'^import fs from "node:fs";$', code, flags=re.M):
+                        structural_failures.append(
+                            'dsh-host-directory-picker-browse 使用 fs. 但缺少 import fs from "node:fs"'
+                            '（运行时 ReferenceError 会被 try/catch 吞掉并静默回落 homedir）'
+                        )
 
                 if changed:
                     with open(p, 'w', encoding='utf-8') as fp:

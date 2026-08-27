@@ -188,6 +188,7 @@ if [ -n "$PY_BIN2" ]; then
     mkdir -p "${FIX}/hit/node_modules/@deepseek-ai/dsh-server" \
              "${FIX}/hit/node_modules/@deepseek-ai/dsh-client-connection" \
              "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek" \
+             "${FIX}/hit/node_modules/@deepseek-ai/dsh-host-directory-picker-browse" \
              "${FIX}/drift/node_modules/@deepseek-ai/dsh-server"
     # 命中夹具：包含全部补丁目标字符串；模型目录块用 printf 生成，
     # \t 由 printf 解释为真实 tab，与上游生成物的缩进字节一致
@@ -208,6 +209,15 @@ EOF
         printf 'const resolved = { maxTokens: config.maxTokens ?? 256e3 };\n'
         printf 'const DEFAULT_MODELS = [\n\t{\n\t\tid: "deepseek-v4-flash",\n\t\tname: "DeepSeek-V4-Flash",\n\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW\n\t},\n\t{\n\t\tid: "deepseek-v4-pro",\n\t\tname: "DeepSeek-V4-Pro",\n\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW\n\t},\n\t{\n\t\tid: "deepseek-v4-flash-vision-exp",\n\t\tname: "DeepSeek-V4-Flash-Vision-Exp",\n\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW,\n\t\tinputModalities: ["text", "image"],\n\t\timagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,\n\t\timageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES\n\t}\n];\n'
     } > "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js"
+    # 目录选择器夹具：严格照上游 rc.2 形态——只具名导入 node:fs/promises，
+    # 没有 fs 默认绑定。此前夹具缺失该包，导致注入的 fnosTargetHome 用了
+    # fs.existsSync 却没补 import fs 的回归一路溜到 rc.8 与 rc.2 两个发布版
+    # （运行时 ReferenceError 被 try/catch 吞掉，静默回落 homedir）。
+    {
+        printf 'import { mkdir, opendir, stat } from "node:fs/promises";\n'
+        printf 'import { homedir } from "node:os";\n'
+        printf 'const home = homedir();\n'
+    } > "${FIX}/hit/node_modules/@deepseek-ai/dsh-host-directory-picker-browse/index.js"
     # 漂移夹具：上游改版后目标串全部消失
     printf 'function isTrustedApiRequest(req){return verify(req);}\n' \
         > "${FIX}/drift/node_modules/@deepseek-ai/dsh-server/index.js"
@@ -228,6 +238,19 @@ EOF
         ok "关键补丁、改名与单一品牌模型目录实际生效"
     else
         bad "补丁内容未正确写入"
+    fi
+    # 目录选择器：fnosTargetHome 用同步 fs.existsSync，必须有配套的 fs 默认导入。
+    # 缺这行时 node --check 仍通过（语法合法），但运行时 fs 未定义 → 静默回落
+    # homedir()，飞牛共享目录定制完全失效。断言三项：注入生效、导入补上、单例。
+    PICKER="${FIX}/hit/node_modules/@deepseek-ai/dsh-host-directory-picker-browse/index.js"
+    PICKER_IMPORTS=$(grep -cE '^import fs from "node:fs";$' "$PICKER" 2>/dev/null)
+    PICKER_HOMES=$(grep -oE 'const home =' "$PICKER" 2>/dev/null | wc -l)
+    if grep -q 'const home = fnosTargetHome();' "$PICKER" \
+       && [ "$PICKER_IMPORTS" = "1" ] \
+       && [ "$(printf '%s' "$PICKER_HOMES" | tr -d ' ')" = "1" ]; then
+        ok "目录选择器注入生效且 fs 默认导入已补齐（单例）"
+    else
+        bad "目录选择器补丁异常（fs 导入=${PICKER_IMPORTS}，home 赋值=${PICKER_HOMES}）"
     fi
     # 幂等：二次执行不应因『未再替换』而误报失败
     if "$PY_BIN2" "${REPO_ROOT}/scripts/apps/deepseek-harness/patch.py" "${FIX}/hit" >/dev/null 2>&1; then
