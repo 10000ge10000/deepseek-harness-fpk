@@ -349,6 +349,50 @@ else
     echo "  - 跳过：node 不可用"
 fi
 
+echo "== 12. 发布策略判定（dry-run 必须只构建不发布）=="
+# 用桩替换 npm / gh，使判定离线且确定：npm 查询返回固定版本、gh 模拟 Release 已存在
+STUB=$(mktemp -d)
+cat > "${STUB}/npm" <<'EOF'
+#!/bin/sh
+case "$*" in
+  *dist-tags.next*)   echo "0.1.1-rc.2" ;;
+  *dist-tags.latest*) echo "0.1.1-rc.2" ;;
+  *) exit 0 ;;
+esac
+EOF
+cat > "${STUB}/gh" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+chmod +x "${STUB}/npm" "${STUB}/gh"
+
+resolve_policy() {
+    env PATH="${STUB}:$PATH" GITHUB_OUTPUT="" \
+        GITHUB_REPOSITORY=owner/repo "$@" \
+        bash scripts/ci/resolve-version.sh 2>&1 | tail -1
+}
+expect_policy() {
+    local desc="$1" want_build="$2" want_publish="$3"; shift 3
+    local out; out=$(resolve_policy "$@")
+    if printf '%s' "$out" | grep -q "build=${want_build}; publish=${want_publish}"; then
+        ok "$desc"
+    else
+        bad "${desc}（期望 build=${want_build} publish=${want_publish}，实际: ${out}）"
+    fi
+}
+
+# dry-run 的优先级必须高于所有触发分支，否则验证构建会误发正式 Release
+expect_policy "dispatch + dry_run → 构建但不发布" true false \
+    EVENT_NAME=workflow_dispatch VERSION_INPUT=0.1.1-rc.2 DRY_RUN=true
+expect_policy "tag 推送 + dry_run → dry_run 压过 tag 发布" true false \
+    EVENT_NAME=push REF_NAME=v0.1.1-rc.2 DRY_RUN=true
+# 回归：未指定 dry_run 时原有发布行为不得被改变
+expect_policy "dispatch + force_rebuild（无 dry_run）→ 正常发布" true true \
+    EVENT_NAME=workflow_dispatch VERSION_INPUT=0.1.1-rc.2 FORCE_REBUILD=true
+expect_policy "tag 推送（无 dry_run）→ 正常发布" true true \
+    EVENT_NAME=push REF_NAME=v0.1.1-rc.2
+rm -rf "${STUB}"
+
 echo
 echo "================================"
 echo "结果: ${PASS} 通过, ${FAIL} 失败"

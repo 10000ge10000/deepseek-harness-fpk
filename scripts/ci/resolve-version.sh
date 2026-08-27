@@ -8,6 +8,7 @@ set -euo pipefail
 #   VERSION_INPUT      dispatch 输入：发布版本号（可带 v 前缀，会规范化去掉）
 #   DSH_VERSION_INPUT  dispatch 输入：上游 DSH npm 版本
 #   FORCE_REBUILD      dispatch 输入：Release 已存在时是否仍强制重建
+#   DRY_RUN            dispatch 输入：仅验证构建，只上传 artifact，不发布 Release
 #   GITHUB_REPOSITORY  仓库 slug（gh release view 用）
 #   GITHUB_OUTPUT      Actions output 文件（本地运行时可为空，仅打印）
 # 输出：target_ver / dsh_ver / tag_name / should_build / publish_release
@@ -17,6 +18,7 @@ REF_NAME="${REF_NAME:-}"
 VERSION_INPUT="${VERSION_INPUT:-}"
 DSH_VERSION_INPUT="${DSH_VERSION_INPUT:-}"
 FORCE_REBUILD="${FORCE_REBUILD:-false}"
+DRY_RUN="${DRY_RUN:-false}"
 
 is_npm_version_ready() {
     local ver="$1"
@@ -127,6 +129,15 @@ fi
 
 if [ "$FORCE_REBUILD" = "true" ]; then
     SHOULD_BUILD=true
+fi
+
+# dry-run：只验证构建并上传 artifact，不创建 Release、不刷新 AppStore 索引与
+# Pages。用于在正式发版前把产物拉到本地实机验证。放在最后判定，优先级高于
+# 上面所有分支：无论触发方式如何，dry-run 一定构建且一定不发布。
+if [ "$DRY_RUN" = "true" ]; then
+    SHOULD_BUILD=true
+    PUBLISH_RELEASE=false
+    echo "dry-run：仅构建并上传 artifact，不发布 Release ${RELEASE_TAG}。"
 fi
 
 if [ -n "${GITHUB_OUTPUT:-}" ]; then

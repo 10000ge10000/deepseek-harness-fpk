@@ -26,6 +26,11 @@ on:
         required: false
         default: false
         type: boolean
+      dry_run:
+        description: '仅验证构建：只上传 artifact，不发布 Release / 不刷新 AppStore 与 Pages'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -75,6 +80,7 @@ jobs:
           VERSION_INPUT: ${{ inputs.version }}
           DSH_VERSION_INPUT: ${{ inputs.dsh_version }}
           FORCE_REBUILD: ${{ inputs.force_rebuild }}
+          DRY_RUN: ${{ inputs.dry_run }}
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/ci/resolve-version.sh
 
