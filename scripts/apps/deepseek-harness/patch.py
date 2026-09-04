@@ -92,9 +92,10 @@ def apply_patches(app_root):
 
                 if 'dsh-client-connection' in p and f == 'client.js':
                     before = code
-                    code = code.replace(
-                        'isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname),',
-                        'isLoopback: true, // fnOS fix (Issue #2): trust proxy/control panel access as loopback'
+                    code = re.sub(
+                        r'isLoopback:\s*(?:transport\?\.ownsHost === true\s*\|\|\s*)?pageLocation === void 0\s*\|\|\s*isLoopbackHostname\(pageLocation\.hostname\),',
+                        'isLoopback: true, // fnOS fix (Issue #2): trust proxy/control panel access as loopback',
+                        code
                     )
                     changed = changed or code != before
 
@@ -107,7 +108,7 @@ def apply_patches(app_root):
                     code = code.replace('name: "DeepSeek"', f'name: "{PRESET_PROVIDER_LABEL}"')
                     code = code.replace('displayName: "DeepSeek"', f'displayName: "{PRESET_PROVIDER_LABEL}"')
                     code = code.replace('const DEFAULT_CONTEXT_WINDOW = 1e6;', 'const DEFAULT_CONTEXT_WINDOW = 2e5;')
-                    code = code.replace(DEFAULT_MODELS_UPSTREAM, DEFAULT_MODELS_BRANDED)
+                    code = re.sub(r'const DEFAULT_MODELS = \[.*?\];', DEFAULT_MODELS_BRANDED, code, flags=re.DOTALL)
                     # 输出上限：上游默认 256e3（256k）大于 200k 窗口，语义倒挂；
                     # 且该值经 dsh-llm resolveCallWithInfo 以 defaultMaxTokens
                     # 随每个请求作为 max_tokens 下发。收敛为 64k：覆盖 reasoningEffort
