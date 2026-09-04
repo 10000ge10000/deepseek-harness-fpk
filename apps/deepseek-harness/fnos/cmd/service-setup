@@ -69,14 +69,21 @@ service_prestart() {
     # 3. 确保存储和配置目录存在且具备写权限
     mkdir -p "${TRIM_PKGVAR}/config" 2>/dev/null || true
 
-    # 4. 确保飞牛共享目录打通与权限细分：
-    # - 存储卷顶层目录 (/vol1 与 /vol1/@appshare) 确保至少 755 (rx) 遍历权限，防止图片附件保存和目录同步报 EACCES
+    # 4. 确保飞牛共享目录打通与权限细分（动态支持 /vol1, /vol2, /vol3 等任意卷）：
+    # - 存储卷顶层目录确保至少 755 (rx) 遍历权限，防止图片附件保存和目录同步报 EACCES
     # - 凭据目录 (.dsh) 保持严格收紧 (700/600)，防止 API Key 泄露或被拒启
     # - 工作区目录 (workspace) 开放全权 (777) 并配置 Default ACL，确保 NAS 用户上传与 DSH 生成互通
-    SHARE_WORKSPACE="/vol1/@appshare/DeepSeekHarness"
-    if [ -d "/vol1" ]; then
-        chmod 755 "/vol1" 2>/dev/null || true
-        chmod 755 "/vol1/@appshare" 2>/dev/null || true
+    local vol_root
+    vol_root=$(echo "${APP_DIR:-}" | grep -oE '^/vol[0-9]+')
+    [ -z "${vol_root}" ] && vol_root=$(echo "${TRIM_PKGVAR:-}" | grep -oE '^/vol[0-9]+')
+    [ -z "${vol_root}" ] && vol_root=$(readlink -f "/var/apps/deepseek-harness/target" 2>/dev/null | grep -oE '^/vol[0-9]+')
+    [ -z "${vol_root}" ] && [ -d "/vol1" ] && vol_root="/vol1"
+    [ -z "${vol_root}" ] && vol_root=$(ls -d /vol* 2>/dev/null | head -n 1)
+
+    if [ -n "${vol_root}" ] && [ -d "${vol_root}" ]; then
+        SHARE_WORKSPACE="${vol_root}/@appshare/DeepSeekHarness"
+        chmod 755 "${vol_root}" 2>/dev/null || true
+        [ -d "${vol_root}/@appshare" ] && chmod 755 "${vol_root}/@appshare" 2>/dev/null || true
         mkdir -p "${SHARE_WORKSPACE}/workspace" "${SHARE_WORKSPACE}/data" 2>/dev/null || true
         chmod 755 "${SHARE_WORKSPACE}" 2>/dev/null || true
         chmod -R a+rwX "${SHARE_WORKSPACE}/workspace" 2>/dev/null || true

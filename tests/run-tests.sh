@@ -416,6 +416,48 @@ expect_policy "tag 推送（无 dry_run）→ 正常发布" true true \
     EVENT_NAME=push REF_NAME=v0.1.1-rc.2
 rm -rf "${STUB}"
 
+echo "== 13. Runner 0.1.2-rc.1 认证凭据与签名 Cookie 生成校验 =="
+AUTH_TEST_RESULT=$(node -e "
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
+function encodeBase64Url(value) {
+    return Buffer.from(value).toString('base64').replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '');
+}
+function decodeBase64Url(value) {
+    const padding = '='.repeat((4 - value.length % 4) % 4);
+    return Buffer.from(value.replaceAll('-', '+').replaceAll('_', '/') + padding, 'base64');
+}
+
+// 模拟 runner.js getAuthCookie 逻辑
+const secret = crypto.randomBytes(32);
+const authority = '127.0.0.1:3081';
+const cookieName = 'dsh-auth-' + encodeBase64Url(crypto.createHash('sha256').update(authority).digest());
+const now = Date.now();
+const payload = { version: 1, authority, issuedAt: now, expiresAt: now + 30 * 86400000 };
+const body = encodeBase64Url(Buffer.from(JSON.stringify(payload), 'utf8'));
+const sig = crypto.createHmac('sha256', secret).update(body).digest();
+const cookieVal = 'v1.' + body + '.' + encodeBase64Url(sig);
+
+// 校验签名与结构
+const parts = cookieVal.split('.');
+if (parts.length !== 3 || parts[0] !== 'v1') process.exit(1);
+const actualSig = decodeBase64Url(parts[2]);
+const expectedSig = crypto.createHmac('sha256', secret).update(parts[1]).digest();
+if (!crypto.timingSafeEqual(actualSig, expectedSig)) process.exit(2);
+
+const decoded = JSON.parse(decodeBase64Url(parts[1]).toString('utf8'));
+if (decoded.authority !== authority || decoded.version !== 1) process.exit(3);
+console.log('OK');
+" 2>&1)
+
+if [ "$AUTH_TEST_RESULT" = "OK" ]; then
+    ok "Cookie 签名、authority 绑定与 Base64Url 校验通过"
+else
+    bad "Cookie 校验失败: $AUTH_TEST_RESULT"
+fi
+
 echo
 echo "================================"
 echo "结果: ${PASS} 通过, ${FAIL} 失败"

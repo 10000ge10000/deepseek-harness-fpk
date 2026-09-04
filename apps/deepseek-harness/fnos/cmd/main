@@ -7,12 +7,23 @@ SERVICE_PORT=3080
 INTERNAL_PORT=3081
 PORT_PATTERN=":(${SERVICE_PORT}|${INTERNAL_PORT}) "
 
-# 自动推导应用与数据目录
+# 关键修复：当以 root 身份执行 start 或 restart 时，自动降权切换为 deepseek-harness 用户
+# 彻底杜绝以 root 误启导致飞牛桌面普通用户无权探测存活并误报“本地应用启动失败”的问题
+if [ "$(id -u)" -eq 0 ] && id "${APPNAME}" >/dev/null 2>&1; then
+    case "${1:-}" in
+        start|restart)
+            exec su -s /bin/bash "${APPNAME}" -c "$0 $*"
+            ;;
+    esac
+fi
+
+# 自动推导应用与数据目录（支持 /vol1, /vol2, /vol3 等任意安装存储卷）
 if [ -z "${TRIM_APPDEST:-}" ]; then
     if [ -e "/var/apps/${APPNAME}/target" ]; then
         TRIM_APPDEST=$(readlink -f "/var/apps/${APPNAME}/target" 2>/dev/null || echo "/var/apps/${APPNAME}/target")
     else
-        TRIM_APPDEST="/vol1/@appcenter/${APPNAME}"
+        TRIM_APPDEST=$(ls -d /vol*/@appcenter/${APPNAME} 2>/dev/null | head -n 1)
+        [ -z "${TRIM_APPDEST}" ] && TRIM_APPDEST="/vol1/@appcenter/${APPNAME}"
     fi
 fi
 
@@ -20,7 +31,8 @@ if [ -z "${TRIM_PKGVAR:-}" ]; then
     if [ -e "/var/apps/${APPNAME}/var" ]; then
         TRIM_PKGVAR=$(readlink -f "/var/apps/${APPNAME}/var" 2>/dev/null || echo "/var/apps/${APPNAME}/var")
     else
-        TRIM_PKGVAR="/vol1/@appdata/${APPNAME}"
+        TRIM_PKGVAR=$(ls -d /vol*/@appdata/${APPNAME} 2>/dev/null | head -n 1)
+        [ -z "${TRIM_PKGVAR}" ] && TRIM_PKGVAR="/vol1/@appdata/${APPNAME}"
     fi
 fi
 
@@ -45,14 +57,30 @@ dsh_pids() {
 
 instance_alive() {
     local pid="$1"
-    [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null
+    [ -z "${pid}" ] && return 1
+    # 核心修复：优先使用 /proc 目录探测，避免非 root 用户对其他用户执行 kill -0 时报 EPERM 导致误判死亡
+    if [ -d "/proc/${pid}" ]; then
+        # 校验 cmdline 防止 PID 复用误判
+        if grep -qaE "(runner\.js|dsh.*bin\.js)" "/proc/${pid}/cmdline" 2>/dev/null; then
+            return 0
+        fi
+        kill -0 "${pid}" 2>/dev/null && return 0
+    fi
+    return 1
 }
 
 # 端口 3080/3081 已被本应用实例占用时，找到对应的 runner 或 dsh 进程
 port_owner_pid() {
     local owner
     owner=$(netstat -tlnp 2>/dev/null | grep -E "${PORT_PATTERN}" | sed -n 's/.*[[:space:]]\([0-9]\+\)\/[A-Za-z0-9_+.-]*[[:space:]]*$/\1/p' | sort -un | head -n 1)
-    [ -n "${owner}" ] && echo "${owner}"
+    if [ -n "${owner}" ]; then
+        echo "${owner}"
+        return
+    fi
+    # 兜底：若 netstat 因非 root 权限无权提取 PID，但端口在监听且 runner 存活
+    if ss -tlpn 2>/dev/null | grep -qE "${PORT_PATTERN}"; then
+        runner_pids
+    fi
 }
 
 recover_running_instance() {
@@ -159,6 +187,11 @@ stop_process() {
         [ "${pid}" = "$$" ] && continue
         kill -9 "${pid}" 2>/dev/null || true
     done
+
+    if command -v fuser >/dev/null 2>&1; then
+        fuser -k "${SERVICE_PORT}/tcp" 2>/dev/null || true
+        fuser -k "${INTERNAL_PORT}/tcp" 2>/dev/null || true
+    fi
 
     # 兜底：清理后确认端口已释放，否则如实报告失败，不输出伪成功
     sleep 1

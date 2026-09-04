@@ -7,6 +7,7 @@
  */
 
 const { spawn } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
 const net = require('net');
@@ -23,12 +24,23 @@ const DEFAULT_BASE_URL = 'https://api.910501.xyz/v1';
 const LEGACY_MODEL = '一万AI分享DSH专用模型';
 
 // DSH 的可编辑设置、凭据和插件 profile 都由 HOME 下的 .dsh 管理。
-// 先确定飞牛工作区，才能在启动前安全迁移旧配置。
+// 先确定飞牛工作区：优先绑定当前存储卷（支持 /vol1, /vol2, /vol3 等）的共享目录，绝不可回退到卷顶层根目录
+const volMatch = APP_DIR.match(/^(\/vol[0-9]+)/) || VAR_DIR.match(/^(\/vol[0-9]+)/);
+const VOL_ROOT = volMatch ? volMatch[1] : '';
+
 let WORKSPACE_DIR = VAR_DIR;
-if (fs.existsSync('/vol1/@appshare/DeepSeekHarness')) {
+if (VOL_ROOT && fs.existsSync(path.join(VOL_ROOT, '@appshare', 'DeepSeekHarness'))) {
+    WORKSPACE_DIR = path.join(VOL_ROOT, '@appshare', 'DeepSeekHarness');
+} else if (fs.existsSync('/vol1/@appshare/DeepSeekHarness')) {
     WORKSPACE_DIR = '/vol1/@appshare/DeepSeekHarness';
-} else if (fs.existsSync('/vol1')) {
-    WORKSPACE_DIR = '/vol1';
+} else {
+    try {
+        const rootDirs = fs.readdirSync('/');
+        const candidate = rootDirs.find(d => /^vol[0-9]+$/.test(d) && fs.existsSync(`/${d}/@appshare/DeepSeekHarness`));
+        if (candidate) {
+            WORKSPACE_DIR = `/${candidate}/@appshare/DeepSeekHarness`;
+        }
+    } catch (e) {}
 }
 
 // 确保 umask 为 0，使 DSH 创建的文件与目录对宿主机 NAS 用户及 SMB 保持完全可读写
@@ -195,6 +207,85 @@ function dedupeCatalogModels() {
 const seededCredential = appendEditableCredential(wizardApiKey);
 const migratedModel = migrateLegacyDefaultModel();
 const catalogDeduped = dedupeCatalogModels();
+
+function encodeBase64Url(value) {
+    return Buffer.from(value).toString('base64').replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '');
+}
+
+function decodeBase64Url(value) {
+    const padding = '='.repeat((4 - value.length % 4) % 4);
+    return Buffer.from(value.replaceAll('-', '+').replaceAll('_', '/') + padding, 'base64');
+}
+
+let cachedAuthCookie = null;
+let lastCookieGenTime = 0;
+
+function getAuthCookie() {
+    const now = Date.now();
+    // 缓存 12 小时内重用，避免每次请求都重复计算与读盘
+    if (cachedAuthCookie && (now - lastCookieGenTime < 12 * 3600 * 1000)) {
+        return cachedAuthCookie;
+    }
+
+    const credPath = path.join(WORKSPACE_DIR, '.dsh', '.credentials.yaml');
+    let secret = null;
+    let yamlContent = '';
+
+    if (fs.existsSync(credPath)) {
+        try {
+            yamlContent = fs.readFileSync(credPath, 'utf-8');
+            const match = yamlContent.match(/client-connection\/browser-session:[^\n]*\n\s*kind:\s*grant\s*\n\s*payload:\s*\n\s*version:\s*1\s*\n\s*secret:\s*([A-Za-z0-9_-]+)/);
+            if (match) {
+                secret = decodeBase64Url(match[1]);
+            }
+        } catch (e) {
+            console.warn('[Runner] 读取 browser-session 凭据异常:', e.message);
+        }
+    }
+
+    if (!secret) {
+        try {
+            const rawSecret = crypto.randomBytes(32);
+            const secretStr = encodeBase64Url(rawSecret);
+            secret = rawSecret;
+            const recordBlock = `records:\n  client-connection/browser-session:\n    kind: grant\n    payload:\n      version: 1\n      secret: ${secretStr}\n`;
+            
+            fs.mkdirSync(path.dirname(credPath), { recursive: true, mode: 0o700 });
+            if (fs.existsSync(credPath)) {
+                if (/^records:\s*$/m.test(yamlContent)) {
+                    yamlContent = yamlContent.replace(/^records:\s*$/m, `records:\n  client-connection/browser-session:\n    kind: grant\n    payload:\n      version: 1\n      secret: ${secretStr}`);
+                    fs.writeFileSync(credPath, yamlContent, { encoding: 'utf-8', mode: 0o600 });
+                } else {
+                    fs.appendFileSync(credPath, `\n${recordBlock}`, { encoding: 'utf-8', mode: 0o600 });
+                }
+            } else {
+                fs.writeFileSync(credPath, `version: 1\n${recordBlock}`, { encoding: 'utf-8', mode: 0o600 });
+            }
+            try { fs.chmodSync(credPath, 0o600); } catch (e) {}
+            console.log('[Runner] 已预置 client-connection/browser-session 认证密钥');
+        } catch (e) {
+            console.warn('[Runner] 预置 browser-session 凭据异常:', e.message);
+        }
+    }
+
+    if (!secret) return '';
+
+    const authority = `127.0.0.1:${DSH_PORT}`;
+    const cookieName = 'dsh-auth-' + encodeBase64Url(crypto.createHash('sha256').update(authority).digest());
+    const expiresAt = now + 30 * 24 * 3600 * 1000;
+    const payload = {
+        version: 1,
+        authority,
+        issuedAt: now,
+        expiresAt
+    };
+    const body = encodeBase64Url(Buffer.from(JSON.stringify(payload), 'utf8'));
+    const sig = crypto.createHmac('sha256', secret).update(body).digest();
+    const cookieVal = `v1.${body}.${encodeBase64Url(sig)}`;
+    cachedAuthCookie = `${cookieName}=${cookieVal}`;
+    lastCookieGenTime = now;
+    return cachedAuthCookie;
+}
 
 // 强力 Polyfill 脚本：全面覆盖 window, self, globalThis, Crypto.prototype 以及 AbortSignal.any / AbortSignal.timeout
 const POLYFILL_SCRIPT = `<script>
@@ -395,6 +486,7 @@ function isNavigationRequest(req) {
  */
 function isAllowedRequest(req) {
     if (!isNavigationRequest(req)) return true;
+    if (req.url && req.url.includes('token=')) return true;
     const refererHost = hostnameFromReferer(req.headers.referer);
     if (!refererHost) return false;
     return refererHost === hostnameFromHostHeader(req.headers.host);
@@ -412,12 +504,19 @@ const proxyServer = http.createServer((clientReq, clientRes) => {
         return;
     }
 
+    const authCookie = getAuthCookie();
+    const incomingCookie = clientReq.headers['cookie'] || '';
+    const mergedCookie = authCookie
+        ? (incomingCookie ? `${incomingCookie}; ${authCookie}` : authCookie)
+        : incomingCookie;
+
     const headers = {
         ...clientReq.headers,
         'x-forwarded-for': clientReq.socket.remoteAddress,
         'x-forwarded-proto': 'http',
         'x-forwarded-host': clientReq.headers.host || `0.0.0.0:${PROXY_PORT}`,
-        host: `127.0.0.1:${DSH_PORT}`
+        host: `127.0.0.1:${DSH_PORT}`,
+        cookie: mergedCookie
     };
 
     // 核心修复：对齐 Origin 与 Referer 避免触发 dsh 上游后端的 CSRF/Host 403 拦截
@@ -491,6 +590,16 @@ const proxyServer = http.createServer((clientReq, clientRes) => {
                 clientRes.end(body);
             });
         } else {
+            // 若上游返回 set-cookie，改写为 SameSite=Lax 确保飞牛桌面 iframe 下能正常存储
+            if (proxyRes.headers['set-cookie']) {
+                if (Array.isArray(proxyRes.headers['set-cookie'])) {
+                    proxyRes.headers['set-cookie'] = proxyRes.headers['set-cookie'].map(c =>
+                        c.replace(/;\s*SameSite=Strict/i, '; SameSite=Lax')
+                    );
+                } else if (typeof proxyRes.headers['set-cookie'] === 'string') {
+                    proxyRes.headers['set-cookie'] = proxyRes.headers['set-cookie'].replace(/;\s*SameSite=Strict/i, '; SameSite=Lax');
+                }
+            }
             // JS/CSS 等带内容哈希的静态资源放行缓存，减少局域网重复回源
             clientRes.writeHead(proxyRes.statusCode, proxyRes.headers);
             proxyRes.pipe(clientRes, { end: true });
@@ -509,8 +618,15 @@ const proxyServer = http.createServer((clientReq, clientRes) => {
 
 // 支持 WebSocket / HTTP Upgrade
 proxyServer.on('upgrade', (req, socket, head) => {
+    const authCookie = getAuthCookie();
+    const incomingCookie = req.headers['cookie'] || '';
+    const mergedCookie = authCookie
+        ? (incomingCookie ? `${incomingCookie}; ${authCookie}` : authCookie)
+        : incomingCookie;
+
     const headers = { ...req.headers };
     headers.host = `127.0.0.1:${DSH_PORT}`;
+    headers.cookie = mergedCookie;
     if (headers.origin) {
         headers.origin = `http://127.0.0.1:${DSH_PORT}`;
     }

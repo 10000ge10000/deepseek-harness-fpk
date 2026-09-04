@@ -139,8 +139,11 @@ def apply_patches(app_root):
                 if 'dsh-host-directory-picker-browse' in p and f == 'index.js':
                     fnos_block = '''function fnosTargetHome() {
 \ttry {
-\t\tif (fs.existsSync("/vol1/@appshare/DeepSeekHarness")) return "/vol1/@appshare/DeepSeekHarness";
-\t\tif (fs.existsSync("/vol1")) return "/vol1";
+\t\tconst rootDirs = fs.readdirSync("/");
+\t\tconst volShare = rootDirs.find(d => /^vol[0-9]+$/.test(d) && fs.existsSync("/" + d + "/@appshare/DeepSeekHarness"));
+\t\tif (volShare) return "/" + volShare + "/@appshare/DeepSeekHarness";
+\t\tconst anyVol = rootDirs.find(d => /^vol[0-9]+$/.test(d));
+\t\tif (anyVol) return "/" + anyVol;
 \t} catch (e) {}
 \treturn homedir();
 }
