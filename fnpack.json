@@ -24,7 +24,7 @@
       "author": "一万AI分享",
       "distributor": "一万AI分享",
       "download_url": "https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/v0.1.2-rc.1/deepseek-harness_0.1.2-rc.1_x86.fpk",
-      "sha256": "542db8d906de6e0ee6b4b1b09d1f5bad91bf6c93b1e019d4944da7888b5b1ce0",
+      "sha256": "99e8fcddf83cf9b54218d986225797f35aae6e2b9468a9d539c35d3e7898e03e",
       "size": 99,
       "run_as": "package",
       "install_type": "",
@@ -33,17 +33,17 @@
       "releases": {
         "0.1.2-rc.1": {
           "changelog": "开箱即用的公益端点与预制提供商；凭据权限收紧（600）；停止彻底释放端口；支持局域网 Polyfill 与飞牛文件管理双向互通。",
-          "updated_at": "2026-09-04T03:31:56+00:00",
+          "updated_at": "2026-09-06T09:56:32+00:00",
           "packages": {
             "x86": {
               "download_url": "https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/v0.1.2-rc.1/deepseek-harness_0.1.2-rc.1_x86.fpk",
-              "sha256": "542db8d906de6e0ee6b4b1b09d1f5bad91bf6c93b1e019d4944da7888b5b1ce0",
-              "size": 103623932
+              "sha256": "99e8fcddf83cf9b54218d986225797f35aae6e2b9468a9d539c35d3e7898e03e",
+              "size": 103597161
             },
             "arm": {
               "download_url": "https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/v0.1.2-rc.1/deepseek-harness_0.1.2-rc.1_arm.fpk",
-              "sha256": "991de4ac246e45a32f78237e19a7ae1144fcf8d2b6cdda3fe3e675728d1ad841",
-              "size": 102610364
+              "sha256": "199beecbc47372e049bd05bdc250f643c1917b59edb77d8af4b5f4c402335dfd",
+              "size": 102585340
             }
           }
         }
