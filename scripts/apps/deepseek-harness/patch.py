@@ -137,29 +137,32 @@ def apply_patches(app_root):
 
                 # 3. 定制 dsh-host-directory-picker-browse 飞牛共享目录
                 if 'dsh-host-directory-picker-browse' in p and f == 'index.js':
-                    fnos_block = '''function fnosTargetHome() {
-\ttry {
-\t\tconst rootDirs = fs.readdirSync("/");
-\t\tconst volShare = rootDirs.find(d => /^vol[0-9]+$/.test(d) && fs.existsSync("/" + d + "/@appshare/DeepSeekHarness"));
-\t\tif (volShare) return "/" + volShare + "/@appshare/DeepSeekHarness";
-\t\tconst anyVol = rootDirs.find(d => /^vol[0-9]+$/.test(d));
-\t\tif (anyVol) return "/" + anyVol;
-\t} catch (e) {}
-\treturn homedir();
-}
-\t\tconst home = fnosTargetHome();
-\t\t'''
+                    before = code
+                    fnos_block = (
+                        'function fnosTargetHome() {\n'
+                        '\ttry {\n'
+                        '\t\tconst rootDirs = fs.readdirSync("/");\n'
+                        '\t\tconst volShare = rootDirs.find(d => /^vol[0-9]+$/.test(d) && fs.existsSync("/" + d + "/@appshare/DeepSeekHarness"));\n'
+                        '\t\tif (volShare) return "/" + volShare + "/@appshare/DeepSeekHarness";\n'
+                        '\t} catch (e) {}\n'
+                        '\treturn homedir();\n'
+                        '}\n'
+                        '\t\tconst home = fnosTargetHome();'
+                    )
 
-                    # 先把文件还原到上游形态，再重新注入，保证幂等（重复执行不叠加）：
-                    # 1) 摘掉所有 fnosTargetHome 函数定义；2) 若残留 `const home = fnosTargetHome();`
-                    # 把它还原为 `const home = homedir();`；3) 只在 `const home = homedir();`
-                    # 存在时替换成 fnos_block。若上游形态被破坏（一个 home 赋值都没有），
-                    # 放弃修改，保持原文件（build.sh 的 node --check 会兜底拦截）。
+                    # 原子块还原：将任何形式的 fnosTargetHome() 定义连带其 home 赋值整块还原为
+                    # 上游原生形态 `const home = homedir();`，同时吸收旧补丁遗留的尾部多余空白行，
+                    # 再重新注入以保证严格幂等（重复执行不叠加空白）。
+                    # 若找不到任意卷的 @appshare/DeepSeekHarness，直接安全回退至 homedir()，
+                    # 严禁回退至卷根目录（如 /vol1），因飞牛 NAS 卷根目录权限为 d---------，
+                    # 会导致 opendir 抛出 EACCES: permission denied (Issue #3)。
+                    code = re.sub(
+                        r'function fnosTargetHome\(\)\s*\{[\s\S]*?const home = fnosTargetHome\(\);(?:\r?\n[ \t]+(?=\r?\n))?',
+                        'const home = homedir();',
+                        code
+                    )
+
                     target = 'const home = homedir();'
-                    if 'function fnosTargetHome()' in code:
-                        code = re.sub(r'function fnosTargetHome\(\) \{.*?\n\}\n', '', code, flags=re.S)
-                    if 'const home = fnosTargetHome();' in code:
-                        code = code.replace('const home = fnosTargetHome();', target)
                     if target in code:
                         # 只注入一次；残留的多余赋值（旧注入还原后与原文件叠加）一律清除
                         code = code.replace(target, fnos_block, 1)
@@ -171,15 +174,19 @@ def apply_patches(app_root):
                         # 查不出来——补丁看似成功、实际失效。
                         if not re.search(r'^import fs from "node:fs";$', code, flags=re.M):
                             code = 'import fs from "node:fs";\n' + code
-                        changed = True
+                    changed = changed or code != before
 
                     # 结构性复核（文件级，不能用全局 CRITICAL_MARKERS 代替：
                     # `import fs from "node:fs";` 在其他包里天然存在，全局计数会假通过）。
-                    # 只要该文件用了 fs.，就必须有配套的默认导入。
+                    # 只要该文件用了 fs.，就必须有配套的默认导入；且绝不得含有 anyVol 回退。
                     if 'fs.' in code and not re.search(r'^import fs from "node:fs";$', code, flags=re.M):
                         structural_failures.append(
                             'dsh-host-directory-picker-browse 使用 fs. 但缺少 import fs from "node:fs"'
                             '（运行时 ReferenceError 会被 try/catch 吞掉并静默回落 homedir）'
+                        )
+                    if 'anyVol' in code:
+                        structural_failures.append(
+                            'dsh-host-directory-picker-browse 包含 anyVol（会因卷根目录权限不足抛出 EACCES 报错 directory-picker/unreadable）'
                         )
 
                 if changed:
@@ -199,6 +206,7 @@ def apply_patches(app_root):
         '单一品牌模型目录': f'name: "{PRESET_MODEL_LABEL}"',
         '输出上限锁定 64k（常量）': 'const DEFAULT_MAX_TOKENS = 65536;',
         '输出上限锁定 64k（回退值）': 'config.maxTokens ?? 65536',
+        '飞牛共享目录定制 (Issue #3)': 'const home = fnosTargetHome();',
     }
     OPTIONAL_MARKERS = {
         '提供商改名（外观性，缺失仅告警）': 'name: "一万AI分享"',

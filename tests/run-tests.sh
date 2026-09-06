@@ -247,8 +247,9 @@ EOF
     PICKER_HOMES=$(grep -oE 'const home =' "$PICKER" 2>/dev/null | wc -l)
     if grep -q 'const home = fnosTargetHome();' "$PICKER" \
        && [ "$PICKER_IMPORTS" = "1" ] \
-       && [ "$(printf '%s' "$PICKER_HOMES" | tr -d ' ')" = "1" ]; then
-        ok "目录选择器注入生效且 fs 默认导入已补齐（单例）"
+       && [ "$(printf '%s' "$PICKER_HOMES" | tr -d ' ')" = "1" ] \
+       && ! grep -q 'anyVol' "$PICKER"; then
+        ok "目录选择器注入生效且 fs 默认导入已补齐（单例且彻底清除 anyVol）"
     else
         bad "目录选择器补丁异常（fs 导入=${PICKER_IMPORTS}，home 赋值=${PICKER_HOMES}）"
     fi
@@ -257,6 +258,16 @@ EOF
         ok "重复执行（幂等）不误报"
     else
         bad "幂等性被破坏"
+    fi
+    PICKER_HOMES_AFTER=$(grep -oE 'const home =' "$PICKER" 2>/dev/null | wc -l)
+    PICKER_IMPORTS_AFTER=$(grep -cE '^import fs from "node:fs";$' "$PICKER" 2>/dev/null)
+    if grep -q 'const home = fnosTargetHome();' "$PICKER" \
+       && [ "$PICKER_IMPORTS_AFTER" = "1" ] \
+       && [ "$(printf '%s' "$PICKER_HOMES_AFTER" | tr -d ' ')" = "1" ] \
+       && ! grep -q 'anyVol' "$PICKER"; then
+        ok "二次执行后目录选择器补丁仍保持单例且无空白累积与 anyVol"
+    else
+        bad "二次执行破坏了目录选择器补丁（fs 导入=${PICKER_IMPORTS_AFTER}，home 赋值=${PICKER_HOMES_AFTER}）"
     fi
     # 漂移：上游改版后必须拒绝打包
     if "$PY_BIN2" "${REPO_ROOT}/scripts/apps/deepseek-harness/patch.py" "${FIX}/drift" >/dev/null 2>&1; then
