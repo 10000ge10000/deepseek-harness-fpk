@@ -14,13 +14,24 @@ PRESET_MODEL_LABEL = '一万AI分享DSH专用模型'
 DEFAULT_MODELS_UPSTREAM = (
     'const DEFAULT_MODELS = [\n'
     '\t{\n'
+    '\t\tid: "deepseek-flash",\n'
+    '\t\tname: "DeepSeek-V41-Flash",\n'
+    '\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW,\n'
+    '\t\tinputModalities: ["text", "image"],\n'
+    '\t\timagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,\n'
+    '\t\timageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,\n'
+    '\t\tsystemPromptUpdate: "in-history"\n'
+    '\t},\n'
+    '\t{\n'
     '\t\tid: "deepseek-v4-flash",\n'
     '\t\tname: "DeepSeek-V4-Flash",\n'
+    '\t\tdescription: "Fast, efficient, and economical; suited to focused, routine, or parallel tasks.",\n'
     '\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW\n'
     '\t},\n'
     '\t{\n'
     '\t\tid: "deepseek-v4-pro",\n'
     '\t\tname: "DeepSeek-V4-Pro",\n'
+    '\t\tdescription: "Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.",\n'
     '\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW\n'
     '\t},\n'
     '\t{\n'
@@ -34,15 +45,40 @@ DEFAULT_MODELS_UPSTREAM = (
     '];'
 )
 
-# 收敛后的目录：仅保留默认模型（id 不变，API 请求与公益站完全兼容），
-# 显示名换品牌名；上下文由 DEFAULT_CONTEXT_WINDOW=2e5 锁定为 200k，
+# 收敛后的目录：默认模型（deepseek-flash，即 V4.1 Flash）显示名换品牌名，
+# 完备保留 V4 Flash、V4 Pro 及 Vision Exp 能力；
+# 全目录上下文由 DEFAULT_CONTEXT_WINDOW=2e5 锁定为 200k，
 # 输出上限由 DEFAULT_MAX_TOKENS=65536 锁定为 64k。
 DEFAULT_MODELS_BRANDED = (
     'const DEFAULT_MODELS = [\n'
     '\t{\n'
-    '\t\tid: "deepseek-v4-flash",\n'
+    '\t\tid: "deepseek-flash",\n'
     f'\t\tname: "{PRESET_MODEL_LABEL}",\n'
+    '\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW,\n'
+    '\t\tinputModalities: ["text", "image"],\n'
+    '\t\timagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,\n'
+    '\t\timageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,\n'
+    '\t\tsystemPromptUpdate: "in-history"\n'
+    '\t},\n'
+    '\t{\n'
+    '\t\tid: "deepseek-v4-flash",\n'
+    '\t\tname: "DeepSeek-V4-Flash",\n'
+    '\t\tdescription: "Fast, efficient, and economical; suited to focused, routine, or parallel tasks.",\n'
     '\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW\n'
+    '\t},\n'
+    '\t{\n'
+    '\t\tid: "deepseek-v4-pro",\n'
+    '\t\tname: "DeepSeek-V4-Pro",\n'
+    '\t\tdescription: "Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.",\n'
+    '\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW\n'
+    '\t},\n'
+    '\t{\n'
+    '\t\tid: "deepseek-v4-flash-vision-exp",\n'
+    '\t\tname: "DeepSeek-V4-Flash-Vision-Exp",\n'
+    '\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW,\n'
+    '\t\tinputModalities: ["text", "image"],\n'
+    '\t\timagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,\n'
+    '\t\timageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES\n'
     '\t}\n'
     '];'
 )
@@ -116,11 +152,12 @@ def apply_patches(app_root):
                     code = code.replace('const DEFAULT_MAX_TOKENS = 256e3;', 'const DEFAULT_MAX_TOKENS = 65536;')
                     code = code.replace('config.maxTokens ?? 256e3', 'config.maxTokens ?? 65536')
                     changed = changed or code != before
-                    # 目录收敛的结构性复核：整块替换若因上游改版落空，残留的
-                    # v4-pro / vision-exp 条目说明匹配已漂移，必须显式失败，
-                    # 不能带着 1M 上下文的多模型目录发布出去。
-                    if 'id: "deepseek-v4-pro",' in code or 'id: "deepseek-v4-flash-vision-exp",' in code:
-                        structural_failures.append('内置模型目录仍含 v4-pro / vision-exp 条目（DEFAULT_MODELS 匹配漂移，需人工更新 patch.py）')
+                    # 模型目录与参数收敛的结构性复核：
+                    # 1. 默认模型（deepseek-flash，即 V4.1 Flash）必须成功应用品牌显示名并具备多模态能力
+                    # 2. 完备保留 V4 Flash、V4 Pro 及 Vision Exp，绝不可误删上游新增或既有能力
+                    for req_id in ['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp']:
+                        if f'id: "{req_id}"' not in code:
+                            structural_failures.append(f'内置模型目录缺少 {req_id} 条目（DEFAULT_MODELS 匹配漂移，需人工更新 patch.py）')
 
                 if 'dsh-client-connection' in p and f == 'client.js':
                     code, group_replacements = re.subn(

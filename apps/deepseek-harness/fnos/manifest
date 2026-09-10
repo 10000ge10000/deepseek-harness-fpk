@@ -1,5 +1,5 @@
 appname         = deepseek-harness
-version         = 0.1.2-rc.1
+version         = 0.1.5-rc.1
 display_name    = DeepSeek Harness
 platform        = x86
 maintainer      = DeepSeek AI

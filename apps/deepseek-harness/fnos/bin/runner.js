@@ -138,7 +138,7 @@ function migrateLegacyDefaultModel() {
         const source = fs.readFileSync(settingsFile, 'utf-8');
         const legacyModel = /^(\s*model:\s*)(?:"一万AI分享DSH专用模型"|'一万AI分享DSH专用模型'|一万AI分享DSH专用模型)(\s*(?:#.*)?)$/m;
         if (!legacyModel.test(source)) return false;
-        fs.writeFileSync(settingsFile, source.replace(legacyModel, '$1deepseek-v4-flash$2'), 'utf-8');
+        fs.writeFileSync(settingsFile, source.replace(legacyModel, '$1deepseek-flash$2'), 'utf-8');
         return true;
     } catch (error) {
         console.warn('[Runner] 迁移旧默认模型失败:', error.message);
@@ -147,7 +147,7 @@ function migrateLegacyDefaultModel() {
 }
 
 // 修复 "duplicate catalog model" 导致的 boot 失败（症状：UI 里所有会话消失）。
-// dsh-llm-deepseek 的内置 catalog 已含 deepseek-v4-flash / deepseek-v4-pro，
+// dsh-llm-deepseek 的内置 catalog 在 0.1.5-rc.1 已含 deepseek-flash / deepseek-v4-flash / deepseek-v4-pro / deepseek-v4-flash-vision-exp，
 // 若 settings.yaml 的 llm-deepseek.models 也写入了同名 id，启动时模型条目重复，
 // 插件树加载失败 -> dsh 直接退出 -> 会话列表为空。这里把用户配置中与内置
 // catalog 重复的条目剔除，保留新增的自定义模型。
@@ -156,7 +156,7 @@ function dedupeCatalogModels() {
     try {
         if (!fs.existsSync(settingsFile)) return false;
         let content = fs.readFileSync(settingsFile, 'utf-8');
-        const builtinIds = ['deepseek-v4-flash', 'deepseek-v4-pro'];
+        const builtinIds = ['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp'];
         const lines = content.split('\n');
         let out = [];
         let inModels = false;
@@ -392,12 +392,13 @@ if (seededCredential) console.log('[Runner] 已将向导 API Key 初始化为可
 if (migratedModel) console.log('[Runner] 已迁移旧的一万AI分享默认模型配置');
 if (catalogDeduped) console.log('[Runner] 已剔除 llm-deepseek 配置中与内置目录重复的模型条目');
 
-const dshProcess = spawn(NODE_BIN, [DSH_BIN, 'web', '--host', '127.0.0.1', '--port', String(DSH_PORT)], {
+const dshProcess = spawn(NODE_BIN, [DSH_BIN, 'web', '--host', '127.0.0.1', '--port', String(DSH_PORT), '--no-open'], {
     cwd: WORKSPACE_DIR,
     env: {
         ...dshEnv,
         PATH: `${path.join(APP_DIR, 'bin')}:${process.env.PATH}`,
-        HOME: WORKSPACE_DIR
+        HOME: WORKSPACE_DIR,
+        DSH_HOME: path.join(WORKSPACE_DIR, '.dsh')
     },
     stdio: 'inherit'
 });

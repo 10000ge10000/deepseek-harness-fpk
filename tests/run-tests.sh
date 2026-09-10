@@ -207,7 +207,7 @@ EOF
         printf 'const DEFAULT_CONTEXT_WINDOW = 1e6;\n'
         printf 'const DEFAULT_MAX_TOKENS = 256e3;\n'
         printf 'const resolved = { maxTokens: config.maxTokens ?? 256e3 };\n'
-        printf 'const DEFAULT_MODELS = [\n\t{\n\t\tid: "deepseek-v4-flash",\n\t\tname: "DeepSeek-V4-Flash",\n\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW\n\t},\n\t{\n\t\tid: "deepseek-v4-pro",\n\t\tname: "DeepSeek-V4-Pro",\n\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW\n\t},\n\t{\n\t\tid: "deepseek-v4-flash-vision-exp",\n\t\tname: "DeepSeek-V4-Flash-Vision-Exp",\n\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW,\n\t\tinputModalities: ["text", "image"],\n\t\timagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,\n\t\timageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES\n\t}\n];\n'
+        printf 'const DEFAULT_MODELS = [\n\t{\n\t\tid: "deepseek-flash",\n\t\tname: "DeepSeek-V41-Flash",\n\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW,\n\t\tinputModalities: ["text", "image"],\n\t\timagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,\n\t\timageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,\n\t\tsystemPromptUpdate: "in-history"\n\t},\n\t{\n\t\tid: "deepseek-v4-flash",\n\t\tname: "DeepSeek-V4-Flash",\n\t\tdescription: "Fast, efficient, and economical; suited to focused, routine, or parallel tasks.",\n\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW\n\t},\n\t{\n\t\tid: "deepseek-v4-pro",\n\t\tname: "DeepSeek-V4-Pro",\n\t\tdescription: "Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.",\n\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW\n\t},\n\t{\n\t\tid: "deepseek-v4-flash-vision-exp",\n\t\tname: "DeepSeek-V4-Flash-Vision-Exp",\n\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW,\n\t\tinputModalities: ["text", "image"],\n\t\timagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,\n\t\timageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES\n\t}\n];\n'
     } > "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js"
     # 目录选择器夹具：严格照上游 rc.2 形态——只具名导入 node:fs/promises，
     # 没有 fs 默认绑定。此前夹具缺失该包，导致注入的 fnosTargetHome 用了
@@ -232,10 +232,13 @@ EOF
        && grep -q '一万AI分享' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
        && grep -q 'const DEFAULT_CONTEXT_WINDOW = 2e5;' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
        && grep -q 'name: "一万AI分享DSH专用模型"' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
+       && grep -q 'id: "deepseek-flash"' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
+       && grep -q 'id: "deepseek-v4-flash"' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
+       && grep -q 'id: "deepseek-v4-pro"' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
+       && grep -q 'id: "deepseek-v4-flash-vision-exp"' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
        && grep -q 'const DEFAULT_MAX_TOKENS = 65536;' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
-       && grep -q 'config.maxTokens ?? 65536' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
-       && ! grep -q 'deepseek-v4-pro' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js"; then
-        ok "关键补丁、改名与单一品牌模型目录实际生效"
+       && grep -q 'config.maxTokens ?? 65536' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js"; then
+        ok "关键补丁、改名与 0.1.5-rc.1 品牌模型目录实际生效"
     else
         bad "补丁内容未正确写入"
     fi
@@ -467,6 +470,197 @@ if [ "$AUTH_TEST_RESULT" = "OK" ]; then
     ok "Cookie 签名、authority 绑定与 Base64Url 校验通过"
 else
     bad "Cookie 校验失败: $AUTH_TEST_RESULT"
+fi
+
+echo "== 14. 0.1.5-rc.1 Profile 与 DSH_HOME 路径规范校验 =="
+if command -v node >/dev/null 2>&1; then
+    PROFILE_TEST_RESULT=$(node -e "
+    const path = require('path');
+    const os = require('os');
+
+    function resolveDshHome(configured, env = process.env) {
+        const fromEnv = env['DSH_HOME'];
+        if (fromEnv && fromEnv.trim().length > 0) return path.resolve(fromEnv);
+        return path.join(os.homedir(), '.dsh');
+    }
+
+    const testWs = '/vol2/@appshare/DeepSeekHarness';
+    const envWithDshHome = { DSH_HOME: path.join(testWs, '.dsh'), HOME: testWs };
+    const res1 = resolveDshHome(undefined, envWithDshHome);
+    if (res1 !== path.resolve(path.join(testWs, '.dsh'))) process.exit(1);
+
+    const envDefault = { HOME: testWs };
+    delete envDefault.DSH_HOME;
+    const res2 = resolveDshHome(undefined, envDefault);
+    if (!res2.endsWith('.dsh')) process.exit(2);
+
+    console.log('OK');
+    " 2>&1)
+    if [ "$PROFILE_TEST_RESULT" = "OK" ]; then
+        ok "DSH_HOME 与 profiles 规范回退解析通过"
+    else
+        bad "DSH_HOME 路径解析异常: $PROFILE_TEST_RESULT"
+    fi
+fi
+
+echo "== 15. settings / credentials / legacy model 迁移与去重回归 =="
+if command -v node >/dev/null 2>&1; then
+    MIGRATE_TEST_RESULT=$(node -e "
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-test-'));
+    const dshDir = path.join(tmp, '.dsh');
+    fs.mkdirSync(dshDir, { recursive: true, mode: 0o700 });
+    const settingsFile = path.join(dshDir, 'settings.yaml');
+
+    fs.writeFileSync(settingsFile, 'agent-default-model:\n  provider: deepseek-official\n  model: \"一万AI分享DSH专用模型\"\n', 'utf8');
+    let source = fs.readFileSync(settingsFile, 'utf-8');
+    const legacyModel = /^(\s*model:\s*)(?:\"一万AI分享DSH专用模型\"|'一万AI分享DSH专用模型'|一万AI分享DSH专用模型)(\s*(?:#.*)?)$/m;
+    if (legacyModel.test(source)) {
+        fs.writeFileSync(settingsFile, source.replace(legacyModel, '\$1deepseek-flash\$2'), 'utf-8');
+    }
+    const migrated = fs.readFileSync(settingsFile, 'utf8');
+    if (!migrated.includes('model: deepseek-flash')) process.exit(1);
+
+    const settingsWithDupes = [
+        'llm-deepseek:',
+        '  models:',
+        '    - id: deepseek-flash',
+        '      name: dup-flash',
+        '    - id: deepseek-v4-flash',
+        '      name: dup-v4',
+        '    - id: custom-model-abc',
+        '      name: Custom Model',
+        '    - id: deepseek-v4-pro',
+        '      name: dup-pro'
+    ].join('\n');
+    fs.writeFileSync(settingsFile, settingsWithDupes, 'utf8');
+
+    let content = fs.readFileSync(settingsFile, 'utf-8');
+    const builtinIds = ['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp'];
+    const lines = content.split('\n');
+    let out = [];
+    let inModels = false;
+    let skipTillBlank = false;
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (/^\s{0,2}llm-deepseek:\s*$/.test(line)) {
+            out.push(line);
+            inModels = false;
+            skipTillBlank = false;
+            continue;
+        }
+        const isTopKey = /^\s{0,2}[a-zA-Z0-9_-]+:\s*$/.test(line);
+        if (isTopKey) {
+            inModels = /^\s{0,2}models:\s*$/.test(line);
+            skipTillBlank = false;
+            out.push(line);
+            continue;
+        }
+        if (/^\s+-\s+id:\s*[\'\"]?([a-zA-Z0-9_.-]+)[\'\"]?\s*$/.test(line)) {
+            const id = line.match(/^\s+-\s+id:\s*[\'\"]?([a-zA-Z0-9_.-]+)[\'\"]?\s*$/)[1];
+            if (inModels && builtinIds.includes(id)) {
+                skipTillBlank = true;
+                continue;
+            }
+            skipTillBlank = false;
+            out.push(line);
+            continue;
+        }
+        if (skipTillBlank) continue;
+        out.push(line);
+    }
+    fs.writeFileSync(settingsFile, out.join('\n'), 'utf8');
+    const deduped = fs.readFileSync(settingsFile, 'utf8');
+    if (deduped.includes('deepseek-flash') || deduped.includes('deepseek-v4-flash') || deduped.includes('deepseek-v4-pro')) process.exit(2);
+    if (!deduped.includes('custom-model-abc')) process.exit(3);
+
+    const credFile = path.join(dshDir, '.credentials.yaml');
+    fs.writeFileSync(credFile, 'records:\n  test: ok\n', { mode: 0o600 });
+    fs.chmodSync(credFile, 0o600);
+    const stat = fs.statSync(credFile);
+    if ((stat.mode & 0o777) !== 0o600) process.exit(4);
+
+    fs.rmSync(tmp, { recursive: true, force: true });
+    console.log('OK');
+    " 2>&1)
+    if [ "$MIGRATE_TEST_RESULT" = "OK" ]; then
+        ok "旧默认模型迁移、0.1.5-rc.1 目录去重及凭据权限 0600 校验通过"
+    else
+        bad "配置迁移去重测试失败: $MIGRATE_TEST_RESULT"
+    fi
+fi
+
+echo "== 16. 多存储卷与工作区权限隔离测试 =="
+VOL_TEST_RESULT=$(bash -c '
+    for sample in "/vol1/@appcenter/deepseek-harness" "/vol2/@appcenter/deepseek-harness" "/vol99/@appdata/deepseek-harness"; do
+        vol=$(echo "$sample" | grep -oE "^/vol[0-9]+")
+        case "$sample" in
+            *vol1*) [ "$vol" = "/vol1" ] || exit 1 ;;
+            *vol2*) [ "$vol" = "/vol2" ] || exit 2 ;;
+            *vol99*) [ "$vol" = "/vol99" ] || exit 3 ;;
+        esac
+    done
+    echo OK
+' 2>&1)
+if [ "$VOL_TEST_RESULT" = "OK" ]; then
+    ok "多存储卷路径模式推导正确 (/vol1, /vol2, /vol99)"
+else
+    bad "存储卷推导失败: $VOL_TEST_RESULT"
+fi
+
+echo "== 17. Reverse Proxy 与 WebSocket 头规范测试 =="
+if command -v node >/dev/null 2>&1; then
+    PROXY_TEST_RESULT=$(node -e "
+    const DSH_PORT = 3081;
+    const PROXY_PORT = 3080;
+    const clientReq = {
+        headers: {
+            host: '10.10.10.10:3080',
+            origin: 'http://10.10.10.10:3080',
+            referer: 'http://10.10.10.10:5666/',
+            'sec-fetch-site': 'cross-site'
+        },
+        socket: { remoteAddress: '10.10.10.100' }
+    };
+    const headers = {
+        ...clientReq.headers,
+        'x-forwarded-for': clientReq.socket.remoteAddress,
+        'x-forwarded-proto': 'http',
+        'x-forwarded-host': clientReq.headers.host || '0.0.0.0:' + PROXY_PORT,
+        host: '127.0.0.1:' + DSH_PORT
+    };
+    if (clientReq.headers.origin) headers.origin = 'http://127.0.0.1:' + DSH_PORT;
+    if (clientReq.headers.referer) headers.referer = 'http://127.0.0.1:' + DSH_PORT + '/';
+    if (headers['sec-fetch-site'] === 'cross-site') headers['sec-fetch-site'] = 'same-origin';
+
+    if (headers.host !== '127.0.0.1:3081') process.exit(1);
+    if (headers.origin !== 'http://127.0.0.1:3081') process.exit(2);
+    if (headers.referer !== 'http://127.0.0.1:3081/') process.exit(3);
+    if (headers['sec-fetch-site'] !== 'same-origin') process.exit(4);
+
+    const setCookie = 'dsh-auth-xyz=123; Path=/; SameSite=Strict';
+    const laxCookie = setCookie.replace(/;\\s*SameSite=Strict/i, '; SameSite=Lax');
+    if (!laxCookie.includes('SameSite=Lax')) process.exit(5);
+
+    console.log('OK');
+    " 2>&1)
+    if [ "$PROXY_TEST_RESULT" = "OK" ]; then
+        ok "反向代理头改写、CSRF对齐及 SameSite=Lax 校验通过"
+    else
+        bad "反向代理头测试失败: $PROXY_TEST_RESULT"
+    fi
+fi
+
+echo "== 18. FPK Manifest 与元数据版本一致性校验 =="
+MANIFEST_VER=$(grep '^version[[:space:]]*=' apps/deepseek-harness/fnos/manifest | awk -F'=' '{print $2}' | tr -d '[:space:]')
+META_VER=$(sed -n 's/^DSH_FALLBACK_VERSION=//p' scripts/apps/deepseek-harness/meta.env | tr -d '[:space:]')
+if [ "$MANIFEST_VER" = "0.1.5-rc.1" ] && [ "$META_VER" = "0.1.5-rc.1" ]; then
+    ok "manifest 与 meta.env 版本严格对齐为 0.1.5-rc.1"
+else
+    bad "版本号未对齐: manifest=${MANIFEST_VER}, meta.env=${META_VER}"
 fi
 
 echo
