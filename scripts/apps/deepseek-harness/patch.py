@@ -6,44 +6,10 @@ import sys
 PRESET_PROVIDER_LABEL = '一万AI分享'
 PRESET_MODEL_LABEL = '一万AI分享DSH专用模型'
 
-# 上游 dsh-llm-deepseek 的内置模型目录（tab 缩进，字节级精确匹配）。
-# 上游给三条内置模型且 contextWindow=1e6（1M）：多轮会话请求体按 1M 滚雪球
-# 是首字耗时飙升的根因；且 settings.yaml 的 defaultContextWindow 只对目录
-# 之外的模型兜底（configured?.contextWindow ?? defaultContextWindow），对
-# 内置条目不生效，必须改插件常量本身。
-DEFAULT_MODELS_UPSTREAM = (
-    'const DEFAULT_MODELS = [\n'
-    '\t{\n'
-    '\t\tid: "deepseek-flash",\n'
-    '\t\tname: "DeepSeek-V41-Flash",\n'
-    '\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW,\n'
-    '\t\tinputModalities: ["text", "image"],\n'
-    '\t\timagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,\n'
-    '\t\timageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,\n'
-    '\t\tsystemPromptUpdate: "in-history"\n'
-    '\t},\n'
-    '\t{\n'
-    '\t\tid: "deepseek-v4-flash",\n'
-    '\t\tname: "DeepSeek-V4-Flash",\n'
-    '\t\tdescription: "Fast, efficient, and economical; suited to focused, routine, or parallel tasks.",\n'
-    '\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW\n'
-    '\t},\n'
-    '\t{\n'
-    '\t\tid: "deepseek-v4-pro",\n'
-    '\t\tname: "DeepSeek-V4-Pro",\n'
-    '\t\tdescription: "Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.",\n'
-    '\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW\n'
-    '\t},\n'
-    '\t{\n'
-    '\t\tid: "deepseek-v4-flash-vision-exp",\n'
-    '\t\tname: "DeepSeek-V4-Flash-Vision-Exp",\n'
-    '\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW,\n'
-    '\t\tinputModalities: ["text", "image"],\n'
-    '\t\timagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,\n'
-    '\t\timageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES\n'
-    '\t}\n'
-    '];'
-)
+# 上游 dsh-llm-deepseek 在 0.1.5-rc.1 内置 4 款模型（deepseek-flash, deepseek-v4-flash,
+# deepseek-v4-pro, deepseek-v4-flash-vision-exp）且默认 contextWindow=1e6 (1M)。
+# 多轮会话请求体按 1M 滚雪球是首字耗时飙升的根因；且 settings.yaml 的
+# defaultContextWindow 只对目录之外的模型兜底，对内置条目不生效，必须改插件常量本身。
 
 # 收敛后的目录：默认模型（deepseek-flash，即 V4.1 Flash）显示名换品牌名，
 # 完备保留 V4 Flash、V4 Pro 及 Vision Exp 能力；

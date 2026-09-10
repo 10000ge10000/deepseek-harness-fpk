@@ -136,7 +136,7 @@ function migrateLegacyDefaultModel() {
     if (!fs.existsSync(settingsFile)) return false;
     try {
         const source = fs.readFileSync(settingsFile, 'utf-8');
-        const legacyModel = /^(\s*model:\s*)(?:"一万AI分享DSH专用模型"|'一万AI分享DSH专用模型'|一万AI分享DSH专用模型)(\s*(?:#.*)?)$/m;
+        const legacyModel = /^(\s*model:\s*)(?:"一万AI分享DSH专用模型"|'一万AI分享DSH专用模型'|一万AI分享DSH专用模型)(\s*(?:#.*)?)$/gm;
         if (!legacyModel.test(source)) return false;
         fs.writeFileSync(settingsFile, source.replace(legacyModel, '$1deepseek-flash$2'), 'utf-8');
         return true;
@@ -148,15 +148,15 @@ function migrateLegacyDefaultModel() {
 
 // 修复 "duplicate catalog model" 导致的 boot 失败（症状：UI 里所有会话消失）。
 // dsh-llm-deepseek 的内置 catalog 在 0.1.5-rc.1 已含 deepseek-flash / deepseek-v4-flash / deepseek-v4-pro / deepseek-v4-flash-vision-exp，
-// 若 settings.yaml 的 llm-deepseek.models 也写入了同名 id，启动时模型条目重复，
-// 插件树加载失败 -> dsh 直接退出 -> 会话列表为空。这里把用户配置中与内置
-// catalog 重复的条目剔除，保留新增的自定义模型。
+// 若 settings.yaml 的 llm-deepseek.models 也写入了同名 id 或 0.1.2-rc.1 旧专用模型 id，
+// 启动时模型条目重复，插件树加载失败 -> dsh 直接退出 -> 会话列表为空。
+// 这里把用户配置中与内置 catalog 重复的条目剔除，保留新增的自定义模型。
 function dedupeCatalogModels() {
     const settingsFile = path.join(WORKSPACE_DIR, '.dsh', 'settings.yaml');
     try {
         if (!fs.existsSync(settingsFile)) return false;
         let content = fs.readFileSync(settingsFile, 'utf-8');
-        const builtinIds = ['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp'];
+        const builtinIds = ['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp', LEGACY_MODEL];
         const lines = content.split('\n');
         let out = [];
         let inModels = false;
@@ -177,8 +177,9 @@ function dedupeCatalogModels() {
                 out.push(line);
                 continue;
             }
-            if (/^\s+-\s+id:\s*['"]?([a-zA-Z0-9_.-]+)['"]?\s*$/.test(line)) {
-                const id = line.match(/^\s+-\s+id:\s*['"]?([a-zA-Z0-9_.-]+)['"]?\s*$/)[1];
+            const idMatch = line.match(/^\s+-\s+id:\s*(?:['"]([^'"\r\n]+)['"]|([^\s#'"]+))/);
+            if (idMatch) {
+                const id = idMatch[1] || idMatch[2];
                 if (inModels && builtinIds.includes(id)) {
                     changed = true;
                     skipTillBlank = true;

@@ -185,14 +185,13 @@ elif command -v python >/dev/null 2>&1; then PY_BIN2=python
 fi
 if [ -n "$PY_BIN2" ]; then
     FIX=$(mktemp -d)
-    mkdir -p "${FIX}/hit/node_modules/@deepseek-ai/dsh-server" \
-             "${FIX}/hit/node_modules/@deepseek-ai/dsh-client-connection" \
+    mkdir -p "${FIX}/hit/node_modules/@deepseek-ai/dsh-client-connection" \
              "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek" \
              "${FIX}/hit/node_modules/@deepseek-ai/dsh-host-directory-picker-browse" \
-             "${FIX}/drift/node_modules/@deepseek-ai/dsh-server"
+             "${FIX}/drift/node_modules/@deepseek-ai/dsh-client-connection"
     # 命中夹具：包含全部补丁目标字符串；模型目录块用 printf 生成，
     # \t 由 printf 解释为真实 tab，与上游生成物的缩进字节一致
-    cat > "${FIX}/hit/node_modules/@deepseek-ai/dsh-server/index.js" <<'EOF'
+    cat > "${FIX}/hit/node_modules/@deepseek-ai/dsh-client-connection/index.js" <<'EOF'
 function isTrustedApiRequest(request, trustedHosts) {
   return false;
 }
@@ -220,14 +219,14 @@ EOF
     } > "${FIX}/hit/node_modules/@deepseek-ai/dsh-host-directory-picker-browse/index.js"
     # 漂移夹具：上游改版后目标串全部消失
     printf 'function isTrustedApiRequest(req){return verify(req);}\n' \
-        > "${FIX}/drift/node_modules/@deepseek-ai/dsh-server/index.js"
+        > "${FIX}/drift/node_modules/@deepseek-ai/dsh-client-connection/index.js"
 
     if "$PY_BIN2" "${REPO_ROOT}/scripts/apps/deepseek-harness/patch.py" "${FIX}/hit" >/dev/null 2>&1; then
         ok "补丁全部命中 → 退出码 0"
     else
         bad "命中夹具被误判失败"
     fi
-    if grep -q 'isLoopbackHostname(hostname) { return true;' "${FIX}/hit/node_modules/@deepseek-ai/dsh-server/index.js" \
+    if grep -q 'isLoopbackHostname(hostname) { return true;' "${FIX}/hit/node_modules/@deepseek-ai/dsh-client-connection/index.js" \
        && grep -q 'isLoopback: true, // fnOS fix' "${FIX}/hit/node_modules/@deepseek-ai/dsh-client-connection/client.js" \
        && grep -q '一万AI分享' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
        && grep -q 'const DEFAULT_CONTEXT_WINDOW = 2e5;' "${FIX}/hit/node_modules/@deepseek-ai/dsh-llm-deepseek/index.js" \
@@ -533,13 +532,15 @@ if command -v node >/dev/null 2>&1; then
         '      name: dup-v4',
         '    - id: custom-model-abc',
         '      name: Custom Model',
+        '    - id: \"一万AI分享DSH专用模型\"',
+        '      name: Legacy Model',
         '    - id: deepseek-v4-pro',
         '      name: dup-pro'
     ].join('\n');
     fs.writeFileSync(settingsFile, settingsWithDupes, 'utf8');
 
     let content = fs.readFileSync(settingsFile, 'utf-8');
-    const builtinIds = ['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp'];
+    const builtinIds = ['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp', '一万AI分享DSH专用模型'];
     const lines = content.split('\n');
     let out = [];
     let inModels = false;
@@ -559,8 +560,9 @@ if command -v node >/dev/null 2>&1; then
             out.push(line);
             continue;
         }
-        if (/^\s+-\s+id:\s*[\'\"]?([a-zA-Z0-9_.-]+)[\'\"]?\s*$/.test(line)) {
-            const id = line.match(/^\s+-\s+id:\s*[\'\"]?([a-zA-Z0-9_.-]+)[\'\"]?\s*$/)[1];
+        const idMatch = line.match(/^\s+-\s+id:\s*(?:[\'\"]([^\'\"\r\n]+)[\'\"]|([^\s#\'\"]+))/);
+        if (idMatch) {
+            const id = idMatch[1] || idMatch[2];
             if (inModels && builtinIds.includes(id)) {
                 skipTillBlank = true;
                 continue;
@@ -574,7 +576,7 @@ if command -v node >/dev/null 2>&1; then
     }
     fs.writeFileSync(settingsFile, out.join('\n'), 'utf8');
     const deduped = fs.readFileSync(settingsFile, 'utf8');
-    if (deduped.includes('deepseek-flash') || deduped.includes('deepseek-v4-flash') || deduped.includes('deepseek-v4-pro')) process.exit(2);
+    if (deduped.includes('deepseek-flash') || deduped.includes('deepseek-v4-flash') || deduped.includes('deepseek-v4-pro') || deduped.includes('一万AI分享DSH专用模型')) process.exit(2);
     if (!deduped.includes('custom-model-abc')) process.exit(3);
 
     const credFile = path.join(dshDir, '.credentials.yaml');

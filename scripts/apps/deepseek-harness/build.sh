@@ -95,6 +95,17 @@ echo "==> Bundling pnpm ${PNPM_VERSION} for DSH plugin management..."
 "${WORK_DIR}/node/bin/npm" install --global --prefix "${WORK_DIR}/app_root" "pnpm@${PNPM_VERSION}" --omit=dev --no-audit --no-fund
 test -x "${WORK_DIR}/app_root/bin/pnpm"
 
+# 随应用提供便捷的 dsh 命令行包装脚本，确保在终端/子进程中可直接通过 PATH 执行 dsh
+echo "==> Creating dsh CLI launcher..."
+cat > "${WORK_DIR}/app_root/bin/dsh" << 'EOF'
+#!/bin/bash
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="$(cd "${BIN_DIR}/.." && pwd)"
+export PATH="${BIN_DIR}:${PATH}"
+exec "${BIN_DIR}/node" "${APP_DIR}/node_modules/@deepseek-ai/dsh/lib/bin.js" "$@"
+EOF
+chmod +x "${WORK_DIR}/app_root/bin/dsh"
+
 # 复制 ui 目录和 runner 脚本至 app_root (解压后位于 ${TRIM_APPDEST})
 if [ -d "${REPO_ROOT}/apps/deepseek-harness/fnos/ui" ]; then
     echo "==> Bundling desktop UI config..."
