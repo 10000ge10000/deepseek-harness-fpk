@@ -20,30 +20,30 @@
       "icon_url": "https://raw.githubusercontent.com/10000ge10000/deepseek-harness-fpk/main/apps/deepseek-harness/fnos/ICON_256.PNG",
       "maintainer": "一万AI分享",
       "maintainer_url": "https://space.bilibili.com/59438380",
-      "version": "0.1.5-rc.2",
+      "version": "0.1.5-rc.3",
       "author": "一万AI分享",
       "distributor": "一万AI分享",
-      "download_url": "https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/v0.1.5-rc.2/deepseek-harness_0.1.5-rc.2_x86.fpk",
-      "sha256": "ddece33be5e43f1bc2f8438187ee51b3d83249a6fbbc56becc86b5a95fed225b",
-      "size": 100,
+      "download_url": "https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/v0.1.5-rc.3/deepseek-harness_0.1.5-rc.3_x86.fpk",
+      "sha256": "2303d7f8f30ca83aeb872dafac350c386b1b38998f96b82b4203ce3525c898f2",
+      "size": 101,
       "run_as": "package",
       "install_type": "",
       "is_docker": false,
       "service_port": "3080",
       "releases": {
-        "0.1.5-rc.2": {
+        "0.1.5-rc.3": {
           "changelog": "开箱即用的公益端点与预制提供商；凭据权限收紧（600）；停止彻底释放端口；支持局域网 Polyfill 与飞牛文件管理双向互通。",
-          "updated_at": "2026-09-10T15:54:26+00:00",
+          "updated_at": "2026-09-22T16:22:05+00:00",
           "packages": {
             "x86": {
-              "download_url": "https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/v0.1.5-rc.2/deepseek-harness_0.1.5-rc.2_x86.fpk",
-              "sha256": "ddece33be5e43f1bc2f8438187ee51b3d83249a6fbbc56becc86b5a95fed225b",
-              "size": 105375719
+              "download_url": "https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/v0.1.5-rc.3/deepseek-harness_0.1.5-rc.3_x86.fpk",
+              "sha256": "2303d7f8f30ca83aeb872dafac350c386b1b38998f96b82b4203ce3525c898f2",
+              "size": 105466478
             },
             "arm": {
-              "download_url": "https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/v0.1.5-rc.2/deepseek-harness_0.1.5-rc.2_arm.fpk",
-              "sha256": "eab55b93c8dd30dbc0c2a36964de4e516eeef22cd708db186b9e0cc31a958259",
-              "size": 104365098
+              "download_url": "https://github.com/10000ge10000/deepseek-harness-fpk/releases/download/v0.1.5-rc.3/deepseek-harness_0.1.5-rc.3_arm.fpk",
+              "sha256": "cac965a77d9482f658e0dcbd433d4ed54c16938ec23baaf204cf33a49e37a79a",
+              "size": 104436116
             }
           }
         }
